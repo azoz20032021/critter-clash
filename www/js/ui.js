@@ -694,7 +694,7 @@
     $('[data-x1]', m).onclick = () => { CC.game.grantGold(rep.gold); CC.game.coinBurst(10); closeModal(m); flashRes('gold'); };
     $('[data-x2]', m).onclick = async () => {
       const ok = await CC.ads.showRewarded();
-      CC.game.grantGold(rep.gold * (ok ? 2 : 1));
+      CC.game.grantGold(ok ? rep.gold.mul(2) : rep.gold);
       if (ok) g.stats.ads++;
       CC.game.coinBurst(18);
       closeModal(m); flashRes('gold');
@@ -748,9 +748,10 @@
     const txt = $('#hp-text');
     bar.classList.toggle('boss', !!(m && m.boss));
     if (m && !m.dead) {
-      const pct = U.clamp(m.hp / m.maxHp * 100, 0, 100);
+      const pct = U.clamp(m.hp.ratio(m.maxHp) * 100, 0, 100);
       fill.style.width = pct + '%';
-      txt.textContent = (m.boss ? '👑 ' : '') + T.tl(m.name) + ' — ' + U.fmt(Math.max(0, m.hp)) + ' / ' + U.fmt(m.maxHp);
+      const shown = m.hp.gt(0) ? m.hp : D(0);
+      txt.textContent = (m.boss ? '👑 ' : '') + T.tl(m.name) + ' — ' + U.fmt(shown) + ' / ' + U.fmt(m.maxHp);
     } else {
       fill.style.width = '0%';
       txt.textContent = g.bossFailed ? T.t('boss_escaped') : '…';

@@ -418,7 +418,7 @@
     { id: 'a_pres1',    name: { ar: 'ولادة جديدة', en: 'Rebirth' },            desc: { ar: 'ابعث مرة واحدة', en: 'Prestige once' },        check: g => g.prestiges >= 1,        gems: 25 },
     { id: 'a_pres5',    name: { ar: 'دورة الأرواح', en: 'Soul Cycle' },        desc: { ar: 'ابعث ٥ مرات', en: 'Prestige 5 times' },        check: g => g.prestiges >= 5,        gems: 75 },
     { id: 'a_souls100', name: { ar: 'جامع الأرواح', en: 'Soul Collector' },    desc: { ar: 'اجمع ١٠٠ روح', en: 'Own 100 souls' },          check: g => g.souls >= 100,          gems: 60 },
-    { id: 'a_gold1e9',  name: { ar: 'ثري', en: 'Rich' },                       desc: { ar: 'اربح مليار ذهب', en: 'Earn 1B total gold' },   check: g => g.stats.totalGold >= 1e9, gems: 50 },
+    { id: 'a_gold1e9',  name: { ar: 'ثري', en: 'Rich' },                       desc: { ar: 'اربح مليار ذهب', en: 'Earn 1B total gold' },   check: g => CC.D(g.stats.totalGold).gte(1e9), gems: 50 },
     { id: 'a_relic5',   name: { ar: 'حافظ الآثار', en: 'Relic Keeper' },       desc: { ar: 'اشترِ ٥ آثار', en: 'Buy 5 relic levels' },     check: g => CC.data.relicLevels(g) >= 5, gems: 40 },
     { id: 'a_skillall', name: { ar: 'كل المهارات', en: 'All Skills' },         desc: { ar: 'افتح كل المهارات', en: 'Unlock every skill' }, check: g => g.bestStage >= 18,       gems: 35 }
   ];

@@ -1,0 +1,9 @@
+node_modules/
+android/
+ios/
+dist/
+*.keystore
+*.log
+.DS_Store
+_site/
+shots/bundle.png

@@ -1,0 +1,13 @@
+{
+  "name": "Critter Clash — صدام المخلوقات",
+  "short_name": "Critter Clash",
+  "description": "Tap, collect critters and idle your way through endless monster stages.",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0d0b1f",
+  "theme_color": "#0d0b1f",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

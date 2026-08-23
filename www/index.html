@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0d0b1f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Critter Clash — صدام المخلوقات</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body class="rtl">
+
+<div id="boot">
+  <div class="boot-logo">🐾</div>
+  <div class="boot-name">Critter Clash</div>
+  <div class="boot-bar"><i></i></div>
+</div>
+
+<div id="app" hidden>
+
+  <!-- ================= HUD ================= -->
+  <header id="hud">
+    <div class="res-row">
+      <div class="res gold"  id="res-gold"><span class="ico">🪙</span><b>0</b></div>
+      <div class="res gems"  id="res-gems"><span class="ico">💎</span><b>0</b></div>
+      <div class="res souls" id="res-souls"><span class="ico">👻</span><b>0</b></div>
+    </div>
+    <div class="stage-row">
+      <button class="stg-btn" id="stage-prev" aria-label="prev">‹</button>
+      <div class="stage-mid">
+        <div class="stage-label"><span id="stage-name">Stage 1</span><em id="zone-name"></em></div>
+        <div class="stage-dots" id="stage-dots"></div>
+      </div>
+      <button class="stg-btn" id="stage-next" aria-label="next">›</button>
+    </div>
+    <div class="boosts" id="boost-row"></div>
+  </header>
+
+  <!-- ================= VIEWS ================= -->
+  <main id="main">
+
+    <!-- BATTLE -->
+    <section class="view" id="view-battle">
+      <div class="hpwrap">
+        <div class="hpbar"><i id="hp-fill"></i><span id="hp-text">—</span></div>
+        <div class="bosstimer" id="boss-timer" hidden><span>⏱</span><b>0:30</b></div>
+      </div>
+
+      <div class="stagearea">
+        <canvas id="scene"></canvas>
+        <div id="taplayer"></div>
+        <div id="battle-msg" class="battle-msg" hidden></div>
+        <button id="boss-btn" class="boss-btn" hidden></button>
+        <div class="dpsbadge"><span id="dps-val">0</span><em id="dps-lbl">DPS</em></div>
+        <button id="chest-btn" class="chest-btn" hidden>🎁</button>
+      </div>
+
+      <div class="skillbar" id="skillbar"></div>
+    </section>
+
+    <!-- CRITTERS -->
+    <section class="view" id="view-critters" hidden>
+      <div class="view-head">
+        <h2 id="critters-title"></h2>
+        <div class="buymode" id="buymode"></div>
+      </div>
+      <div class="list" id="critter-list"></div>
+    </section>
+
+    <!-- UPGRADES -->
+    <section class="view" id="view-upgrades" hidden>
+      <div class="view-head">
+        <h2 id="upgrades-title"></h2>
+        <div class="buymode" id="buymode2"></div>
+      </div>
+      <div class="list" id="upgrade-list"></div>
+    </section>
+
+    <!-- PRESTIGE -->
+    <section class="view" id="view-prestige" hidden>
+      <div class="prestige-hero">
+        <div class="p-orb">👻</div>
+        <h2 id="prestige-title"></h2>
+        <p id="prestige-desc"></p>
+        <div class="p-stats">
+          <div><em id="lbl-souls"></em><b id="p-souls">0</b></div>
+          <div><em id="lbl-pcount"></em><b id="p-count">0</b></div>
+          <div><em id="lbl-sbonus"></em><b id="p-bonus">+0%</b></div>
+        </div>
+        <button class="btn big gold" id="prestige-btn"></button>
+      </div>
+      <div class="view-head"><h2 id="relics-title"></h2></div>
+      <p class="muted" id="relics-desc"></p>
+      <div class="list" id="relic-list"></div>
+    </section>
+
+    <!-- ARENA -->
+    <section class="view" id="view-arena" hidden>
+      <div class="arena-head">
+        <div class="rank-badge" id="arena-rank"><span>🥉</span><em></em></div>
+        <div class="arena-stat"><em id="lbl-trophies"></em><b id="arena-trophies">0</b></div>
+        <div class="arena-stat"><em id="lbl-pr"></em><b id="arena-pr">0</b></div>
+      </div>
+      <div class="teamstrip" id="arena-myteam"></div>
+      <div class="arena-actions">
+        <button class="btn ghost" id="arena-copy"></button>
+        <button class="btn ghost" id="arena-friend"></button>
+      </div>
+      <div class="view-head"><h2 id="rivals-title"></h2><button class="mini-btn" id="arena-reroll">🔄</button></div>
+      <div class="list" id="rival-list"></div>
+      <div class="row" id="arena-record"></div>
+    </section>
+
+    <!-- MORE -->
+    <section class="view" id="view-more" hidden>
+      <div class="seg" id="more-seg"></div>
+      <div id="more-body"></div>
+    </section>
+  </main>
+
+  <!-- ================= NAV ================= -->
+  <nav id="tabs">
+    <button data-view="battle"   class="tab active"><span>⚔️</span><em></em></button>
+    <button data-view="critters" class="tab"><span>🐾</span><em></em><i class="dot" hidden></i></button>
+    <button data-view="upgrades" class="tab"><span>⬆️</span><em></em><i class="dot" hidden></i></button>
+    <button data-view="prestige" class="tab"><span>👻</span><em></em><i class="dot" hidden></i></button>
+    <button data-view="arena"    class="tab"><span>🏆</span><em></em><i class="dot" hidden></i></button>
+    <button data-view="more"     class="tab"><span>☰</span><em></em><i class="dot" hidden></i></button>
+  </nav>
+</div>
+
+<div id="modals"></div>
+<div id="toasts"></div>
+
+<script src="js/bignum.js"></script>
+<script src="js/util.js"></script>
+<script src="js/i18n.js"></script>
+<script src="js/data.js"></script>
+<script src="js/state.js"></script>
+<script src="js/sprites.js"></script>
+<script src="js/mutations.js"></script>
+<script src="js/arena.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/ads.js"></script>
+<script src="js/game.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/views.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,135 @@
+name: build android
+
+# Builds the game into installable Android packages in the cloud.
+# You do NOT need Android Studio, a JDK, or the Android SDK on your machine.
+#
+#   • app-debug.apk  → always built. Copy it to your phone and install it.
+#   • app-release.aab → the file Google Play wants. Built only once the four
+#                       signing secrets below exist in the repository.
+#
+# Repository secrets to add (Settings → Secrets and variables → Actions):
+#   KEYSTORE_BASE64      the .jks file, base64 encoded
+#   KEYSTORE_PASSWORD    the store password you chose
+#   KEY_ALIAS            the alias you chose (e.g. critterclash)
+#   KEY_PASSWORD         the key password you chose
+#
+# Create the keystore once, on any machine with a JDK:
+#   keytool -genkeypair -v -keystore critterclash.jks -alias critterclash \
+#           -keyalg RSA -keysize 2048 -validity 10000
+#   base64 -w0 critterclash.jks > critterclash.b64      # macOS: base64 -i critterclash.jks
+#
+# KEEP THE .jks FILE FOREVER. Losing it means you can never update the app again.
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Generate the native Android project
+        run: |
+          if [ ! -d android ]; then
+            npx cap add android
+          fi
+          npx cap sync android
+
+      - name: Lock the app to portrait
+        run: |
+          python3 - <<'PY'
+          import re, pathlib
+          p = pathlib.Path('android/app/src/main/AndroidManifest.xml')
+          s = p.read_text()
+          if 'android:screenOrientation' not in s:
+              s = s.replace('<activity', '<activity\n            android:screenOrientation="portrait"', 1)
+              p.write_text(s)
+              print('portrait lock added')
+          else:
+              print('already locked')
+          PY
+
+      - name: Read the version from package.json
+        id: ver
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      # ---------------------------------------------------------------
+      # Debug APK — install this straight onto your phone to play-test
+      # ---------------------------------------------------------------
+      - name: Build debug APK
+        working-directory: android
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: critter-clash-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+      # ---------------------------------------------------------------
+      # Release AAB — the file you upload to Google Play
+      # ---------------------------------------------------------------
+      - name: Check for signing secrets
+        id: signing
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No signing secrets set — skipping the release bundle. Add KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_ALIAS and KEY_PASSWORD to build an uploadable .aab."
+          fi
+
+      - name: Build release bundle
+        if: steps.signing.outputs.ready == 'true'
+        working-directory: android
+        run: ./gradlew bundleRelease --no-daemon
+
+      - name: Sign the bundle
+        if: steps.signing.outputs.ready == 'true'
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/upload.jks"
+          IN=android/app/build/outputs/bundle/release/app-release.aab
+          OUT="critter-clash-${{ steps.ver.outputs.version }}.aab"
+          jarsigner -verbose:summary \
+            -keystore "$RUNNER_TEMP/upload.jks" \
+            -storepass "$KEYSTORE_PASSWORD" \
+            -keypass "$KEY_PASSWORD" \
+            -sigalg SHA256withRSA -digestalg SHA-256 \
+            -signedjar "$OUT" "$IN" "$KEY_ALIAS"
+          jarsigner -verify "$OUT" && echo "signature verified"
+          rm -f "$RUNNER_TEMP/upload.jks"
+
+      - name: Upload release bundle
+        if: steps.signing.outputs.ready == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: critter-clash-release-aab
+          path: critter-clash-${{ steps.ver.outputs.version }}.aab
+          if-no-files-found: error

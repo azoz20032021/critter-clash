@@ -1,0 +1,41 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Playwright + Chromium
+        run: |
+          npm install --no-audit --no-fund playwright
+          npx playwright install --with-deps chromium
+
+      - name: Big-number unit tests
+        run: node tools/test-bignum.js
+
+      - name: Gameplay tests
+        run: node tools/test-game.js
+
+      - name: Arena & mutation tests
+        run: node tools/test-arena.js
+
+      - name: Build single-file bundle
+        run: node tools/bundle.js
+
+      - name: Upload playable build
+        uses: actions/upload-artifact@v4
+        with:
+          name: critter-clash-playable
+          path: dist/critter-clash.html

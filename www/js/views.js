@@ -175,23 +175,130 @@
     }
   }
 
-  function openOnlineBattle(opp, seed) {
-    // Wrap openBattle to report result to Firebase after
-    const origOpp = opp;
-    openBattle(opp, seed);
-
-    // Monkey-patch the finishBattle to also report online
-    const origFinish = finishBattle;
-    // We'll hook into the battle result via the battle object instead
-    // by checking in closeBattle
-    if (battle) {
-      battle._onlineOpp = origOpp;
-    }
+  function openOnlineBattle(opp, seed, isLiveDuel) {
+    openBattle(opp, seed, !!isLiveDuel);
   }
 
   /* =========================================================
-     Friends list
+     Battle screen
      ========================================================= */
+  let battle = null;
+
+  function openBattle(opp, seed, isLiveDuel) {
+    const mine = AR.myTeam(g);
+    if (!mine.length) { CC.ui.toast(T.t('need_team'), 'bad'); return; }
+
+    const isLive = !!isLiveDuel;
+    // If not live duel and opponent is offline or bot/asynchronous, apply offline drain penalty
+    const offlineDrain = !isLive ? AR.offlineDrainPerSec(g.arena.trophies || 0) : 0;
+    const tapDmg = AR.tapDamageOf(g.arena.trophies || 0);
+
+    const simOpts = offlineDrain > 0 ? { offlineDrain } : {};
+    const res = AR.simulate(mine, opp.team, seed, simOpts);
+    const myPR = AR.powerRating(mine), oppPR = AR.powerRating(opp.team);
+    const myTrophies = g.arena.trophies || 0;
+    const oppTrophies = opp.trophies !== undefined ? opp.trophies : Math.max(0, Math.floor((opp.stage || 1) * 12));
+
+    const tapHintText = T.t('tap_damage_hint').replace('{dmg}', tapDmg);
+    const drainHintText = offlineDrain > 0 ? T.t('offline_drain_hint').replace('{drain}', offlineDrain) : '';
+
+    const el = document.createElement('div');
+    el.className = 'battle-screen';
+    el.innerHTML =
+      '<div class="battle-top">' +
+        '<div class="side a"><div class="nm"><span class="trophy-tag">🏆 ' + U.fmt(myTrophies) + '</span> ' + (g.playerName || T.t('you')) + '</div>' +
+        '<div class="pw">' + T.t('power_rating') + ' ' + myPR + '</div></div>' +
+        '<div class="vs">VS</div>' +
+        '<div class="side b"><div class="nm">' + opp.name + ' <span class="trophy-tag">🏆 ' + U.fmt(oppTrophies) + '</span></div>' +
+        '<div class="pw">' + T.t('power_rating') + ' ' + oppPR + '</div></div>' +
+      '</div>' +
+      '<div class="battle-status-bar">' +
+        '<div class="tap-dmg-banner">' + tapHintText + '</div>' +
+        (offlineDrain > 0 ? '<div class="offline-drain-banner">' + drainHintText + '</div>' : '') +
+      '</div>' +
+      '<canvas id="battle-canvas"></canvas>' +
+      '<div class="battle-result"><div class="big"></div><div class="sub"></div></div>' +
+      '<div class="battle-bottom"><button class="btn ghost" data-skip>' + T.t('skip') + '</button></div>';
+    document.body.appendChild(el);
+
+    const canvas = $('#battle-canvas', el);
+    const ctx = canvas.getContext('2d');
+
+    battle = {
+      el, canvas, ctx, res, opp, mine, myPR, oppPR,
+      A: res.a.map(f => ({ f, hp: f.maxHp, shown: f.maxHp, lunge: 0, dead: false, flash: 0 })),
+      B: res.b.map(f => ({ f, hp: f.maxHp, shown: f.maxHp, lunge: 0, dead: false, flash: 0 })),
+      nums: [], t: 0, idx: 0, done: false, speed: Math.max(1.1, res.duration / 7),
+      raf: 0, rewarded: false, offlineDrain, tapDmg
+    };
+
+    if (opp && opp.uid) {
+      battle._onlineOpp = opp;
+    }
+
+    // Tap / Click on battle canvas to deal interactive damage!
+    canvas.addEventListener('pointerdown', (ev) => {
+      if (!battle || battle.done) return;
+      const rect = canvas.getBoundingClientRect();
+      const clickX = ev.clientX - rect.left;
+      const clickY = ev.clientY - rect.top;
+
+      const livingB = battle.B.filter(v => !v.dead && v.hp > 0);
+      if (!livingB.length) return;
+
+      // Find closest living enemy to tap point
+      let target = livingB[0];
+      let minDist = Infinity;
+      for (const v of livingB) {
+        const p = slotPos(1, v.f.slot);
+        const dist = Math.hypot(p.x - clickX, p.y - clickY);
+        if (dist < minDist) {
+          minDist = dist;
+          target = v;
+        }
+      }
+
+      // Deal tap damage (scaled to battle HP pool)
+      const curTapDmg = AR.tapDamageOf(g.arena.trophies || 0);
+      const scaledDmg = Math.max(1, curTapDmg * (target.f.maxHp / 3000));
+      target.hp = Math.max(0, target.hp - scaledDmg);
+      target.flash = 1;
+      target.lunge = 0.4;
+
+      battle.nums.push({
+        x: clickX,
+        y: clickY - 20,
+        life: 0,
+        text: '-' + curTapDmg + ' ⚡',
+        color: '#ffd43b'
+      });
+
+      if (!g.reduceFx) CC.audio.play('tap');
+
+      if (target.hp <= 0 && !target.dead) {
+        target.dead = true;
+        target.hp = 0;
+        CC.audio.play('kill');
+        const p = slotPos(1, target.f.slot);
+        battle.nums.push({ x: p.x, y: p.y - 20, life: 0, text: '💀', color: '#ff5d6c' });
+
+        const anyAliveB = battle.B.some(v => !v.dead && v.hp > 0);
+        if (!anyAliveB && !battle.done) {
+          battle.res.winner = 0;
+          finishBattle(false);
+        }
+      }
+    });
+
+    sizeBattle();
+    global.addEventListener('resize', sizeBattle);
+
+    $('[data-skip]', el).onclick = () => finishBattle(true);
+    battle.raf = requestAnimationFrame(battleFrame);
+    battle.last = performance.now();
+    CC.audio.play('boss');
+  }
+
   async function renderFriendsList() {
     const host = $('#friends-list');
     if (!host) return;
@@ -228,9 +335,14 @@
           '</div>' +
         '</div>' +
         '<div class="friend-actions">' +
-          '<button class="fight" data-attack>' + T.t('attack_friend') + '</button>' +
+          '<button class="fight live-duel-btn" data-live-duel title="' + T.t('live_duel') + '">' + T.t('live_duel') + '</button>' +
+          '<button class="fight mini-btn" data-attack title="' + T.t('attack_friend') + '">🎯</button>' +
           '<button class="mini-btn" data-remove title="Remove">✕</button>' +
         '</div>';
+
+      $('[data-live-duel]', el).onclick = () => {
+        startLiveDuelWithFriend(f.uid, f.name || 'Player');
+      };
 
       $('[data-attack]', el).onclick = async () => {
         if (!AR.myTeam(g).length) { CC.ui.toast(T.t('need_team'), 'bad'); return; }
@@ -252,6 +364,121 @@
 
       host.appendChild(el);
     });
+  }
+
+  /* ─── Live Friend Duels UI ────────────────────────────── */
+  let currentDuelModal = null;
+
+  function handleIncomingDuel(challenge) {
+    if (currentDuelModal) return;
+    CC.audio.play('achieve');
+
+    currentDuelModal = CC.ui.modal(
+      '<div class="big-ico">⚔️</div>' +
+      '<h3>' + T.t('live_duel') + '</h3>' +
+      '<p style="text-align:center"><strong>' + (challenge.challengerName || 'Player') + '</strong> ' + T.t('challenge_received') + '</p>' +
+      '<div class="btns" style="margin-top:15px;display:flex;gap:10px">' +
+        '<button class="btn bad" data-reject style="flex:1">' + T.t('reject_challenge') + '</button>' +
+        '<button class="btn gold" data-accept style="flex:1">' + T.t('accept_challenge') + '</button>' +
+      '</div>'
+    );
+
+    $('[data-reject]', currentDuelModal).onclick = async () => {
+      await CC.online.rejectDuel(challenge.challengerUid, challenge.duelId);
+      CC.ui.closeModal(currentDuelModal);
+      currentDuelModal = null;
+    };
+
+    $('[data-accept]', currentDuelModal).onclick = async () => {
+      if (!AR.myTeam(g).length) {
+        CC.ui.toast(T.t('need_team'), 'bad');
+        return;
+      }
+      $('[data-accept]', currentDuelModal).disabled = true;
+      const ok = await CC.online.acceptDuel(challenge.challengerUid, challenge.duelId);
+      CC.ui.closeModal(currentDuelModal);
+      currentDuelModal = null;
+
+      if (ok) {
+        try {
+          const decoded = AR.decodeTeam(challenge.challengerTeam);
+          const opp = {
+            uid: challenge.challengerUid,
+            name: decoded.name || challenge.challengerName || 'Player',
+            team: decoded.team,
+            stage: decoded.stage || 1,
+            trophies: 0
+          };
+          CC.ui.toast(T.t('accept_challenge'), 'good');
+          openOnlineBattle(opp, challenge.seed);
+        } catch (e) {
+          CC.ui.toast(T.t('network_error'), 'bad');
+        }
+      }
+    };
+  }
+
+  async function startLiveDuelWithFriend(friendUid, friendName) {
+    if (!AR.myTeam(g).length) {
+      CC.ui.toast(T.t('need_team'), 'bad');
+      return;
+    }
+
+    let challengeObj = null;
+    let countdownSec = 30;
+
+    const modal = CC.ui.modal(
+      '<div class="big-ico">⚔️</div>' +
+      '<h3>' + T.t('send_challenge') + '</h3>' +
+      '<p style="text-align:center">' + T.t('waiting_friend').replace('…', '') + ' <strong>' + friendName + '</strong> (' + countdownSec + 's)…</p>' +
+      '<div class="btns" style="margin-top:15px">' +
+        '<button class="btn ghost" data-cancel>' + T.t('cancel') + '</button>' +
+      '</div>'
+    );
+
+    const textP = $('p', modal);
+
+    const timer = setInterval(() => {
+      countdownSec--;
+      if (textP) textP.innerHTML = T.t('waiting_friend').replace('…', '') + ' <strong>' + friendName + '</strong> (' + countdownSec + 's)…';
+      if (countdownSec <= 0) {
+        clearInterval(timer);
+        if (challengeObj) challengeObj.cancel();
+        CC.ui.closeModal(modal);
+        CC.ui.toast(T.t('challenge_timeout'), 'bad');
+      }
+    }, 1000);
+
+    $('[data-cancel]', modal).onclick = async () => {
+      clearInterval(timer);
+      if (challengeObj) await challengeObj.cancel();
+      CC.ui.closeModal(modal);
+    };
+
+    challengeObj = await CC.online.sendDuelChallenge(friendUid, statusRes => {
+      clearInterval(timer);
+      CC.ui.closeModal(modal);
+      if (statusRes.status === 'accepted') {
+        CC.audio.play('achieve');
+        CC.ui.toast(T.t('accept_challenge'), 'good');
+        const opp = {
+          uid: friendUid,
+          name: statusRes.oppName || friendName,
+          team: statusRes.oppTeam,
+          stage: 1,
+          trophies: 0
+        };
+        openOnlineBattle(opp, statusRes.seed);
+      } else if (statusRes.status === 'rejected') {
+        CC.ui.toast(T.t('challenge_rejected'), 'bad');
+      }
+    });
+
+    if (!challengeObj) {
+      clearInterval(timer);
+      CC.ui.closeModal(modal);
+      CC.ui.toast(T.t('network_error'), 'bad');
+    }
   }
 
   function openAddFriendModal() {
@@ -337,52 +564,7 @@
     return Math.floor(diff / 86400) + 'd';
   }
 
-  /* =========================================================
-     Battle screen
-     ========================================================= */
-  let battle = null;
 
-  function openBattle(opp, seed) {
-    const mine = AR.myTeam(g);
-    if (!mine.length) { CC.ui.toast(T.t('need_team'), 'bad'); return; }
-    const res = AR.simulate(mine, opp.team, seed);
-    const myPR = AR.powerRating(mine), oppPR = AR.powerRating(opp.team);
-    const myTrophies = g.arena.trophies || 0;
-    const oppTrophies = opp.trophies !== undefined ? opp.trophies : Math.max(0, Math.floor((opp.stage || 1) * 12));
-
-    const el = document.createElement('div');
-    el.className = 'battle-screen';
-    el.innerHTML =
-      '<div class="battle-top">' +
-        '<div class="side a"><div class="nm"><span class="trophy-tag">🏆 ' + U.fmt(myTrophies) + '</span> ' + (g.playerName || T.t('you')) + '</div>' +
-        '<div class="pw">' + T.t('power_rating') + ' ' + myPR + '</div></div>' +
-        '<div class="vs">VS</div>' +
-        '<div class="side b"><div class="nm">' + opp.name + ' <span class="trophy-tag">🏆 ' + U.fmt(oppTrophies) + '</span></div>' +
-        '<div class="pw">' + T.t('power_rating') + ' ' + oppPR + '</div></div>' +
-      '</div>' +
-      '<canvas id="battle-canvas"></canvas>' +
-      '<div class="battle-result"><div class="big"></div><div class="sub"></div></div>' +
-      '<div class="battle-bottom"><button class="btn ghost" data-skip>' + T.t('skip') + '</button></div>';
-    document.body.appendChild(el);
-
-    const canvas = $('#battle-canvas', el);
-    const ctx = canvas.getContext('2d');
-
-    battle = {
-      el, canvas, ctx, res, opp, mine, myPR, oppPR,
-      A: res.a.map(f => ({ f, hp: f.maxHp, shown: f.maxHp, lunge: 0, dead: false, flash: 0 })),
-      B: res.b.map(f => ({ f, hp: f.maxHp, shown: f.maxHp, lunge: 0, dead: false, flash: 0 })),
-      nums: [], t: 0, idx: 0, done: false, speed: Math.max(1.1, res.duration / 7),
-      raf: 0, rewarded: false
-    };
-    sizeBattle();
-    global.addEventListener('resize', sizeBattle);
-
-    $('[data-skip]', el).onclick = () => finishBattle(true);
-    battle.raf = requestAnimationFrame(battleFrame);
-    battle.last = performance.now();
-    CC.audio.play('boss');
-  }
 
   function sizeBattle() {
     if (!battle) return;
@@ -466,6 +648,20 @@
       const p = slotPos(dst.f.side, dst.f.slot);
       battle.nums.push({ x: p.x, y: p.y - 30, life: 0, text: '🕊️', color: '#ffd43b' });
       CC.audio.play('achieve');
+    } else if (e.type === 'drain') {
+      const dst = fighterView(e.to);
+      if (dst && !dst.dead) {
+        dst.hp = Math.max(0, dst.hp - e.dmg);
+        dst.flash = 0.4;
+        const p = slotPos(dst.f.side, dst.f.slot);
+        battle.nums.push({
+          x: p.x + U.rand(-10, 10),
+          y: p.y - 24,
+          life: 0,
+          text: '-' + AR.offlineDrainPerSec(g.arena.trophies || 0) + ' 💔',
+          color: '#ff6b6b'
+        });
+      }
     }
   }
 
@@ -733,5 +929,5 @@
     };
   }
 
-  CC.views = { init, buildArena, updateArena, renderMyTeam, renderRivals, openMutation, openBattle, closeBattle };
+  CC.views = { init, buildArena, updateArena, renderMyTeam, renderRivals, openMutation, openBattle, closeBattle, handleIncomingDuel };
 })(window);

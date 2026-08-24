@@ -20,6 +20,7 @@
       stage: 1, killsInStage: 0, bestStage: 1,
       bossActive: false, bossTimer: 0, bossFailed: false,
       autoAdvance: true,
+      playerName: 'Player' + Math.floor(1000 + Math.random() * 9000),
 
       critters: {}, upgrades: {}, relics: {}, achievements: {},
       mutations: {},           // critterId -> { rarity, trait, element, shape, hue, seed }
@@ -182,7 +183,7 @@
     g.killsInStage = U.clamp(Math.floor(g.killsInStage) || 0, 0, DATA.BAL.monstersPerStage);
     if (!g.mutations) g.mutations = {};
     if (!g.mutRolls) g.mutRolls = {};
-    if (!g.playerName) g.playerName = '';
+    if (!g.playerName) g.playerName = 'Player' + Math.floor(1000 + Math.random() * 9000);
     if (!g.arena) g.arena = { trophies: 0, wins: 0, losses: 0, lastOpponents: [], nextFree: 0 };
     if (!g.online) g.online = { uid: null, friendCode: '', friends: {}, attackLog: [], lastSync: 0 };
     if (!g.online.friends) g.online.friends = {};

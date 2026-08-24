@@ -9,20 +9,20 @@
   const CC = global.CC || (global.CC = {});
 
   const FIREBASE_CONFIG = {
-    apiKey:            "AIzaSyCiCW_4MJfRwPFJteBB54RXbZCVuNLq8YM",
-    authDomain:        "critter-clash-4115a.firebaseapp.com",
-    databaseURL:       "https://critter-clash-4115a-default-rtdb.firebaseio.com",
-    projectId:         "critter-clash-4115a",
-    storageBucket:     "critter-clash-4115a.firebasestorage.app",
+    apiKey: "AIzaSyCiCW_4MJfRwPFJteBB54RXbZCVuNLq8YM",
+    authDomain: "critter-clash-4115a.firebaseapp.com",
+    databaseURL: "https://critter-clash-4115a-default-rtdb.firebaseio.com",
+    projectId: "critter-clash-4115a",
+    storageBucket: "critter-clash-4115a.firebasestorage.app",
     messagingSenderId: "951933912495",
-    appId:             "1:951933912495:web:c8072a4e3541b41c6b5b5a"
+    appId: "1:951933912495:web:c8072a4e3541b41c6b5b5a"
   };
 
-  let db    = null;    // Firebase Realtime Database
-  let auth  = null;    // Firebase Auth
-  let uid   = null;    // current user id
+  let db = null;    // Firebase Realtime Database
+  let auth = null;    // Firebase Auth
+  let uid = null;    // current user id
   let ready = false;
-  let g     = null;    // reference to game state
+  let g = null;    // reference to game state
 
   /* ─── Init ─────────────────────────────────────────────── */
   async function init(state) {
@@ -39,13 +39,22 @@
       if (!firebase.apps.length) {
         firebase.initializeApp(FIREBASE_CONFIG);
       }
-      db   = firebase.database();
+      db = firebase.database();
       auth = firebase.auth();
 
-      // Sign in anonymously
-      const cred = await auth.signInAnonymously();
-      uid = cred.user.uid;
-      g.online.uid = uid;
+      // Sign in anonymously if not already signed in
+      if (auth.currentUser) {
+        uid = auth.currentUser.uid;
+        g.online.uid = uid;
+        g.online.isAnonymous = auth.currentUser.isAnonymous;
+        g.online.email = auth.currentUser.email || '';
+        g.online.displayName = auth.currentUser.displayName || '';
+      } else {
+        const cred = await auth.signInAnonymously();
+        uid = cred.user.uid;
+        g.online.uid = uid;
+        g.online.isAnonymous = true;
+      }
 
       // Generate friend code if we don't have one
       if (!g.online.friendCode) {
@@ -58,8 +67,13 @@
       // Sync our data to Firebase
       await syncMyData();
 
-      // Listen for incoming attacks
+      // Listen for incoming attacks & live duels
       listenForAttacks();
+      listenForDuels(challenge => {
+        if (CC.views && CC.views.handleIncomingDuel) {
+          CC.views.handleIncomingDuel(challenge);
+        }
+      });
 
       return true;
     } catch (e) {
@@ -101,12 +115,12 @@
     const encoded = team.length ? AR.encodeTeam(g, g.playerName) : '';
 
     const data = {
-      name:        (g.playerName || CC.i18n.t('you')).slice(0, 18),
-      trophies:    g.arena.trophies || 0,
-      bestStage:   g.bestStage || 1,
-      friendCode:  g.online.friendCode,
-      team:        encoded,
-      lastOnline:  firebase.database.ServerValue.TIMESTAMP
+      name: (g.playerName || ('Player' + Math.floor(1000 + Math.random() * 9000))).slice(0, 18),
+      trophies: g.arena.trophies || 0,
+      bestStage: g.bestStage || 1,
+      friendCode: g.online.friendCode,
+      team: encoded,
+      lastOnline: firebase.database.ServerValue.TIMESTAMP
     };
 
     try {
@@ -179,12 +193,13 @@
       const AR = CC.arena;
       const decoded = AR.decodeTeam(data.team);
       return {
-        uid:      data.uid || null,
-        name:     data.name || 'Player',
+        uid: data.uid || null,
+        name: data.name || 'Player',
         trophies: data.trophies || 0,
-        team:     decoded.team,
-        stage:    decoded.stage || data.bestStage || 1,
-        online:   true,
+        team: decoded.team,
+        stage: decoded.stage || data.bestStage || 1,
+        lastOnline: data.lastOnline || 0,
+        online: true,
         generated: false
       };
     } catch (e) {
@@ -309,11 +324,11 @@
     if (!ready || !oppUid) return;
     try {
       const attackData = {
-        attackerUid:  uid,
+        attackerUid: uid,
         attackerName: (g.playerName || CC.i18n.t('you')).slice(0, 18),
-        result:       won ? 'win' : 'lose',   // from attacker perspective
-        trophyDelta:  trophyDelta || 0,
-        timestamp:    firebase.database.ServerValue.TIMESTAMP
+        result: won ? 'win' : 'lose',   // from attacker perspective
+        trophyDelta: trophyDelta || 0,
+        timestamp: firebase.database.ServerValue.TIMESTAMP
       };
       await db.ref('attacks/' + oppUid).push(attackData);
 
@@ -352,11 +367,11 @@
         if (g.online.attackLog.some(a => a.id === logKey)) return;
 
         const entry = {
-          id:           logKey,
+          id: logKey,
           attackerName: data.attackerName || 'Player',
-          attackerWon:  data.result === 'win',
-          trophyDelta:  data.trophyDelta || 0,
-          timestamp:    data.timestamp || Date.now()
+          attackerWon: data.result === 'win',
+          trophyDelta: data.trophyDelta || 0,
+          timestamp: data.timestamp || Date.now()
         };
 
         g.online.attackLog.unshift(entry);
@@ -388,11 +403,11 @@
       snap.forEach(child => {
         const data = child.val();
         entries.push({
-          id:           child.key,
+          id: child.key,
           attackerName: data.attackerName || 'Player',
-          attackerWon:  data.result === 'win',
-          trophyDelta:  data.trophyDelta || 0,
-          timestamp:    data.timestamp || 0
+          attackerWon: data.result === 'win',
+          trophyDelta: data.trophyDelta || 0,
+          timestamp: data.timestamp || 0
         });
       });
 
@@ -405,13 +420,209 @@
     }
   }
 
-  /* ─── Clear old attacks ────────────────────────────────── */
-  async function clearMyAttacks() {
-    if (!ready || !uid) return;
+  /* ─── Google Authentication ────────────────────────────── */
+  async function signInWithGoogle() {
+    if (!ready || !auth) return { ok: false, error: 'offline' };
+    const provider = new firebase.auth.GoogleAuthProvider();
     try {
-      await db.ref('attacks/' + uid).remove();
-      g.online.attackLog = [];
+      let result;
+      if (auth.currentUser && auth.currentUser.isAnonymous) {
+        try {
+          result = await auth.currentUser.linkWithPopup(provider);
+        } catch (linkErr) {
+          if (linkErr.code === 'auth/credential-already-in-use') {
+            result = await auth.signInWithPopup(provider);
+          } else {
+            throw linkErr;
+          }
+        }
+      } else {
+        result = await auth.signInWithPopup(provider);
+      }
+
+      const user = result.user;
+      uid = user.uid;
+      g.online.uid = uid;
+      g.online.isAnonymous = user.isAnonymous;
+      g.online.email = user.email || '';
+      g.online.displayName = user.displayName || '';
+      if (!g.playerName && user.displayName) {
+        g.playerName = user.displayName.slice(0, 18);
+      }
+
+      if (!g.online.friendCode) {
+        g.online.friendCode = await generateUniqueFriendCode();
+      }
+
+      await syncMyData();
+      await saveCloudState();
+      CC.state.save(g, true);
+
+      return { ok: true, user };
+    } catch (e) {
+      console.warn('[online] Google Sign-In failed:', e);
+      return { ok: false, error: e.message || 'failed' };
+    }
+  }
+
+  async function signOutGoogle() {
+    if (!ready || !auth) return false;
+    try {
+      await auth.signOut();
+      const cred = await auth.signInAnonymously();
+      uid = cred.user.uid;
+      g.online.uid = uid;
+      g.online.isAnonymous = true;
+      g.online.email = '';
+      g.online.displayName = '';
+      await syncMyData();
+      CC.state.save(g, true);
+      return true;
+    } catch (e) {
+      console.warn('[online] Sign-Out failed:', e);
+      return false;
+    }
+  }
+
+  async function saveCloudState() {
+    if (!ready || !uid || (g.online && g.online.isAnonymous)) return;
+    try {
+      const stateJson = CC.state.exportSave(g);
+      await db.ref('saves/' + uid).set({
+        save: stateJson,
+        updatedAt: firebase.database.ServerValue.TIMESTAMP
+      });
     } catch (e) { /* ignore */ }
+  }
+
+  async function loadCloudState() {
+    if (!ready || !uid) return null;
+    try {
+      const snap = await db.ref('saves/' + uid).once('value');
+      if (!snap.exists()) return null;
+      const data = snap.val();
+      if (data && data.save) {
+        return CC.state.importSave(data.save);
+      }
+    } catch (e) { /* ignore */ }
+    return null;
+  }
+
+  /* ─── Live Friend Duels & Synchronized Spectating ──────── */
+  let onDuelReceivedCallback = null;
+
+  function listenForDuels(onReceived) {
+    if (!ready || !uid) return;
+    onDuelReceivedCallback = onReceived;
+
+    db.ref('duels/' + uid)
+      .orderByChild('timestamp')
+      .limitToLast(5)
+      .on('child_added', snap => {
+        const data = snap.val();
+        if (!data || data.status !== 'pending') return;
+
+        // Skip expired challenges (older than 45s)
+        const age = Date.now() - (data.timestamp || 0);
+        if (age > 45000) return;
+
+        if (onDuelReceivedCallback) {
+          onDuelReceivedCallback({
+            duelId: snap.key,
+            challengerUid: data.challengerUid,
+            challengerName: data.challengerName || 'Player',
+            challengerTeam: data.challengerTeam,
+            seed: data.seed
+          });
+        }
+      });
+  }
+
+  async function sendDuelChallenge(targetUid, onStatusChange) {
+    if (!ready || !uid || targetUid === uid) return null;
+    const AR = CC.arena;
+    const team = AR.myTeam(g);
+    if (!team.length) return null;
+    const encoded = AR.encodeTeam(g, g.playerName);
+    const seed = (Date.now() ^ Math.floor(Math.random() * 1e6)) >>> 0;
+
+    const duelData = {
+      challengerUid: uid,
+      challengerName: (g.playerName || ('Player' + Math.floor(1000 + Math.random() * 9000))).slice(0, 18),
+      challengerTeam: encoded,
+      seed: seed,
+      status: 'pending',
+      timestamp: firebase.database.ServerValue.TIMESTAMP
+    };
+
+    const ref = db.ref('duels/' + targetUid).push();
+    const duelId = ref.key;
+    await ref.set(duelData);
+
+    const listener = ref.on('value', snap => {
+      const val = snap.val();
+      if (!val) return;
+      if (val.status === 'accepted' && val.targetTeam) {
+        ref.off();
+        if (onStatusChange) {
+          onStatusChange({
+            status: 'accepted',
+            duelId,
+            seed: val.seed,
+            oppTeam: AR.decodeTeam(val.targetTeam).team,
+            oppName: val.targetName || 'Player'
+          });
+        }
+      } else if (val.status === 'rejected') {
+        ref.off();
+        if (onStatusChange) onStatusChange({ status: 'rejected', duelId });
+      }
+    });
+
+    return {
+      duelId,
+      seed,
+      cancel: async () => {
+        try {
+          ref.off();
+          await ref.update({ status: 'rejected' });
+        } catch (e) { /* ignore */ }
+      }
+    };
+  }
+
+  async function acceptDuel(challengerUid, duelId) {
+    if (!ready || !uid) return false;
+    const AR = CC.arena;
+    const team = AR.myTeam(g);
+    if (!team.length) return false;
+    const encoded = AR.encodeTeam(g, g.playerName);
+
+    try {
+      await db.ref('duels/' + uid + '/' + duelId).update({
+        status: 'accepted',
+        targetTeam: encoded,
+        targetName: (g.playerName || ('Player' + Math.floor(1000 + Math.random() * 9000))).slice(0, 18),
+        acceptedAt: firebase.database.ServerValue.TIMESTAMP
+      });
+      return true;
+    } catch (e) {
+      console.warn('[online] acceptDuel failed:', e);
+      return false;
+    }
+  }
+
+  async function rejectDuel(challengerUid, duelId) {
+    if (!ready || !uid) return false;
+    try {
+      await db.ref('duels/' + uid + '/' + duelId).update({
+        status: 'rejected'
+      });
+      return true;
+    } catch (e) {
+      console.warn('[online] rejectDuel failed:', e);
+      return false;
+    }
   }
 
   /* ─── Exports ──────────────────────────────────────────── */
@@ -420,6 +631,8 @@
     findOpponent, addFriendByCode, getFriendsList,
     attackFriend, removeFriend,
     reportAttack, getAttackLog, clearMyAttacks,
+    signInWithGoogle, signOutGoogle, saveCloudState, loadCloudState,
+    listenForDuels, sendDuelChallenge, acceptDuel, rejectDuel,
     get uid() { return uid; },
     get friendCode() { return g ? g.online.friendCode : ''; }
   };

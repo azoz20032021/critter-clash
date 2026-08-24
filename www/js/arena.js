@@ -70,7 +70,7 @@
     const team = myTeam(g);
     const payload = {
       v: 1,
-      n: (name || g.playerName || 'Player').slice(0, 18),
+      n: (name || g.playerName || ('Player' + Math.floor(1000 + Math.random() * 9000))).slice(0, 18),
       s: g.bestStage,
       t: team.map(u => [
         u.tier, u.level,
@@ -107,7 +107,7 @@
       } : null;
       return unitFrom(def, Math.max(1, a[1] | 0), mut);
     });
-    return { name: String(p.n || 'Player').slice(0, 18), stage: p.s | 0, team };
+    return { name: String(p.n || ('Player' + Math.floor(1000 + Math.random() * 9000))).slice(0, 18), stage: p.s | 0, team };
   }
 
   /* ---------------------------------------------------------
@@ -193,9 +193,28 @@
   }
 
   /**
+   * Click / Tap damage in battle, based on trophies.
+   * Base 1, then +1 per 100 trophies (e.g. 0-99 -> 1, 100-199 -> 2, 200-299 -> 3).
+   */
+  function tapDamageOf(trophies) {
+    return 1 + Math.floor((trophies || 0) / 100);
+  }
+
+  /**
+   * Offline drain: HP per second lost by the attacker (side 0) when attacking offline opponents.
+   * Base 1, then +1 per 100 trophies.
+   */
+  function offlineDrainPerSec(trophies) {
+    return 1 + Math.floor((trophies || 0) / 100);
+  }
+
+  /**
+   * @param {Object} [opts] – optional settings
+   * @param {number} [opts.offlineDrain] – HP/s drain on side 0 fighters (offline penalty)
    * @returns {{winner:number, events:Array, a:Array, b:Array, duration:number}}
    */
-  function simulate(teamA, teamB, seed) {
+  function simulate(teamA, teamB, seed, opts) {
+    opts = opts || {};
     let scale = 0;
     for (const u of teamA.concat(teamB)) scale = Math.max(scale, u.logPower);
     const A = buildFighters(teamA, 0, scale);
@@ -203,6 +222,19 @@
     const rng = U.seeded(seed >>> 0);
     const events = [];
     let t = 0;
+
+    // Offline drain: fraction of maxHp lost per second on side 0
+    const drainPerSec = opts.offlineDrain || 0;
+    // Normalize drain to be relative to the battle HP scale
+    // buildFighters gives ~3000 * rel * bonuses for maxHp, so 1 drain ≈ 0.03% of max
+    // We want it subtle but noticeable — scale against the average maxHp of A
+    let avgMaxHpA = 0;
+    if (drainPerSec > 0) {
+      for (const f of A) avgMaxHpA += f.maxHp;
+      avgMaxHpA = avgMaxHpA / Math.max(1, A.length);
+    }
+    // drain is drainPerSec * (avgMaxHp / 3000) per second = small fraction per tick
+    const drainPerTick = drainPerSec > 0 ? drainPerSec * (avgMaxHpA / 3000) * TICK : 0;
 
     const living = arr => arr.filter(f => f.alive);
 
@@ -240,6 +272,22 @@
     }
 
     while (t < MAX_TIME && living(A).length && living(B).length) {
+      // Offline drain on side A (attacker)
+      if (drainPerTick > 0) {
+        for (const f of A) {
+          if (!f.alive) continue;
+          f.hp -= drainPerTick;
+          if (f.hp <= 0) checkDeath(f);
+        }
+        // Emit a drain event every full second for visual feedback
+        if (Math.abs(t - Math.round(t)) < TICK * 0.6 && t > 0) {
+          for (const f of A) {
+            if (!f.alive) continue;
+            events.push({ t, type: 'drain', to: f.side + ':' + f.slot, dmg: drainPerSec * (avgMaxHpA / 3000) });
+          }
+        }
+      }
+
       for (const f of A.concat(B)) {
         if (!f.alive) continue;
         if (f.poisonT > 0) {
@@ -325,6 +373,7 @@
 
   CC.arena = {
     TEAM_SIZE, myTeam, unitFrom, powerRating, encodeTeam, decodeTeam,
-    generateRival, rivalSlate, simulate, battleSeed, applyResult, rankOf, botName
+    generateRival, rivalSlate, simulate, battleSeed, applyResult, rankOf, botName,
+    tapDamageOf, offlineDrainPerSec
   };
 })(window);

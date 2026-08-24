@@ -476,9 +476,9 @@
     const inp = document.createElement('input');
     inp.className = 'nameinput';
     inp.maxLength = 18;
-    inp.value = g.playerName || '';
-    inp.placeholder = T.t('you');
-    inp.oninput = () => { g.playerName = inp.value.slice(0, 18); };
+    inp.value = g.playerName || ('Player' + Math.floor(1000 + Math.random() * 9000));
+    inp.placeholder = 'Player' + Math.floor(1000 + Math.random() * 9000);
+    inp.oninput = () => { g.playerName = inp.value.slice(0, 18) || ('Player' + Math.floor(1000 + Math.random() * 9000)); };
     inp.onblur = () => { S.save(g, true); if (CC.views) CC.views.renderMyTeam(); };
     nameRow.appendChild(inp);
     body.appendChild(nameRow);
@@ -488,6 +488,60 @@
     body.appendChild(switchRow('haptics', g.haptics, v => { g.haptics = v; }));
     body.appendChild(switchRow('reduce_fx', g.reduceFx, v => { g.reduceFx = v; }));
     body.appendChild(switchRow('auto_advance', g.autoAdvance, v => { g.autoAdvance = v; }));
+
+    /* Google Sign-In / Account linking */
+    const googleBox = document.createElement('div');
+    googleBox.className = 'google-box';
+    googleBox.style.marginTop = '8px';
+    const isGoogleLinked = CC.online && CC.online.isReady() && g.online && !g.online.isAnonymous && g.online.email;
+
+    if (isGoogleLinked) {
+      googleBox.innerHTML =
+        '<div class="row" style="flex-direction:column;align-items:flex-start;gap:6px">' +
+          '<div style="display:flex;align-items:center;justify-content:space-between;width:100%">' +
+            '<span style="color:var(--green);font-weight:800">' + T.t('google_linked') + '</span>' +
+            '<span class="muted" style="font-size:.7rem">' + g.online.email + '</span>' +
+          '</div>' +
+          '<button class="btn ghost mini" data-google-signout style="margin-top:4px">' + T.t('google_signout') + '</button>' +
+        '</div>';
+      setTimeout(() => {
+        const btnOut = googleBox.querySelector('[data-google-signout]');
+        if (btnOut) {
+          btnOut.onclick = async () => {
+            btnOut.disabled = true;
+            await CC.online.signOutGoogle();
+            toast(T.t('saved'), 'good');
+            buildMore();
+          };
+        }
+      }, 0);
+    } else {
+      googleBox.innerHTML =
+        '<div class="row" style="flex-direction:column;align-items:stretch;gap:6px">' +
+          '<p class="muted" style="font-size:.7rem;text-align:center">' + T.t('google_link_desc') + '</p>' +
+          '<button class="btn gold" data-google-signin style="margin-top:4px">' + T.t('google_signin') + '</button>' +
+        '</div>';
+      setTimeout(() => {
+        const btnIn = googleBox.querySelector('[data-google-signin]');
+        if (btnIn) {
+          btnIn.onclick = async () => {
+            btnIn.disabled = true;
+            btnIn.textContent = T.t('searching');
+            const res = await CC.online.signInWithGoogle();
+            if (res.ok) {
+              toast(T.t('google_success'), 'good');
+              CC.audio.play('achieve');
+              buildMore();
+            } else {
+              btnIn.disabled = false;
+              btnIn.textContent = T.t('google_signin');
+              toast(T.t('google_failed'), 'bad');
+            }
+          };
+        }
+      }, 0);
+    }
+    body.appendChild(googleBox);
 
     const btns = document.createElement('div');
     btns.style.cssText = 'display:flex;flex-direction:column;gap:8px;margin-top:12px';

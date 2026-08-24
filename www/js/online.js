@@ -627,8 +627,9 @@
 
   /* ─── Google Authentication ────────────────────────────── */
   async function signInWithGoogle() {
+    const T = CC.i18n;
     if (typeof firebase === 'undefined') {
-      return { ok: false, error: 'offline', msg: T ? T.t('google_failed') : 'Offline' };
+      return { ok: false, error: 'offline', msg: (T && T.t) ? T.t('google_failed') : 'Offline' };
     }
 
     try {
@@ -657,7 +658,7 @@
       }
 
       if (!result || !result.user) {
-        return { ok: false, error: 'no_user', msg: T ? T.t('google_failed') : 'No user returned' };
+        return { ok: false, error: 'no_user', msg: (T && T.t) ? T.t('google_failed') : 'No user returned' };
       }
 
       const user = result.user;
@@ -699,20 +700,25 @@
       return { ok: true, user };
     } catch (e) {
       console.warn('[online] Google Sign-In failed:', e);
-      let msg = T ? T.t('google_failed') : 'Google Sign-In failed';
-      const isAr = CC.i18n ? CC.i18n.getLang() === 'ar' : true;
+      let msg = (T && T.t) ? T.t('google_failed') : 'Google Sign-In failed';
+      const isAr = (T && T.getLang) ? T.getLang() === 'ar' : true;
+      const host = (typeof window !== 'undefined' && window.location && window.location.hostname) ? window.location.hostname : 'critter-clash-peach.vercel.app';
       if (e.code === 'auth/operation-not-allowed') {
         msg = isAr
-          ? 'يجب تفعيل Google في Firebase Console (Authentication > Sign-in method)'
+          ? 'يجب تفعيل موفر Google في لوحة Firebase Console (Authentication > Sign-in method)'
           : 'Google sign-in is disabled in Firebase Console (Authentication > Sign-in method)';
       } else if (e.code === 'auth/unauthorized-domain') {
         msg = isAr
-          ? 'هذا النطاق غير مصرح به في Firebase Console (Authorized Domains)'
-          : 'Domain not authorized in Firebase Console (Authorized Domains)';
+          ? 'النطاق (' + host + ') غير مضاف في Firebase Console! يرجى إضافته في Authorized Domains.'
+          : 'Domain (' + host + ') is not in Firebase Authorized Domains.';
       } else if (e.code === 'auth/popup-closed-by-user') {
         msg = isAr
           ? 'تم إغلاق نافذة تسجيل الدخول'
           : 'Sign-in popup was closed';
+      } else if (e.code === 'auth/popup-blocked') {
+        msg = isAr
+          ? 'المتصفح حظر النافذة المنبثقة، يرجى السماح بالنوافذ المنبثقة'
+          : 'Popup was blocked by browser';
       } else if (e.code === 'auth/network-request-failed') {
         msg = isAr
           ? 'تعذر الاتصال بالشبكة'

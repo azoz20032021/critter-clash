@@ -537,7 +537,17 @@
               btnIn.disabled = false;
               btnIn.textContent = T.t('google_signin');
               const msg = res.msg || res.error || T.t('google_failed');
-              toast(msg, 'bad');
+              if (res.error === 'auth/unauthorized-domain' || res.error === 'auth/operation-not-allowed') {
+                const m = modal(
+                  '<div class="big-ico">⚠️</div>' +
+                  '<h3>' + T.t('google_failed') + '</h3>' +
+                  '<p style="text-align:center;font-size:.85rem;line-height:1.6;margin:12px 0">' + msg + '</p>' +
+                  '<div class="btns"><button class="btn gold" data-close>' + T.t('close') + '</button></div>'
+                );
+                $('[data-close]', m).onclick = () => closeModal(m);
+              } else {
+                toast(msg, 'bad');
+              }
             }
           };
         }

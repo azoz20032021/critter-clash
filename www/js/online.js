@@ -627,7 +627,9 @@
 
   /* ─── Google Authentication ────────────────────────────── */
   async function signInWithGoogle() {
-    if (typeof firebase === 'undefined') return { ok: false, error: 'offline' };
+    if (typeof firebase === 'undefined') {
+      return { ok: false, error: 'offline', msg: T ? T.t('google_failed') : 'Offline' };
+    }
 
     try {
       if (!firebase.apps.length) {
@@ -636,7 +638,7 @@
       if (!auth) auth = firebase.auth();
       if (!db) db = firebase.database();
     } catch (e) {
-      return { ok: false, error: 'init_failed' };
+      return { ok: false, error: 'init_failed', msg: e.message || 'Firebase init failed' };
     }
 
     const provider = new firebase.auth.GoogleAuthProvider();
@@ -644,44 +646,25 @@
 
     try {
       let result = null;
-      if (auth.currentUser && auth.currentUser.isAnonymous) {
-        try {
-          result = await auth.currentUser.linkWithPopup(provider);
-        } catch (linkErr) {
-          // If the Google account is already linked to another account, sign in directly
-          if (linkErr.code === 'auth/credential-already-in-use' ||
-              linkErr.code === 'auth/email-already-in-use' ||
-              linkErr.code === 'auth/account-exists-with-different-credential') {
-            result = await auth.signInWithPopup(provider);
-          } else if (linkErr.code === 'auth/popup-blocked') {
-            await auth.signInWithRedirect(provider);
-            return { ok: true, redirect: true };
-          } else {
-            // Try direct popup fallback
-            result = await auth.signInWithPopup(provider);
-          }
+      try {
+        result = await auth.signInWithPopup(provider);
+      } catch (popErr) {
+        if (popErr.code === 'auth/popup-blocked') {
+          await auth.signInWithRedirect(provider);
+          return { ok: true, redirect: true };
         }
-      } else {
-        try {
-          result = await auth.signInWithPopup(provider);
-        } catch (popErr) {
-          if (popErr.code === 'auth/popup-blocked') {
-            await auth.signInWithRedirect(provider);
-            return { ok: true, redirect: true };
-          }
-          throw popErr;
-        }
+        throw popErr;
       }
 
       if (!result || !result.user) {
-        return { ok: false, error: 'no_user' };
+        return { ok: false, error: 'no_user', msg: T ? T.t('google_failed') : 'No user returned' };
       }
 
       const user = result.user;
       uid = user.uid;
       ready = true;
       g.online.uid = uid;
-      g.online.isAnonymous = user.isAnonymous;
+      g.online.isAnonymous = false;
       g.online.email = user.email || '';
       g.online.displayName = user.displayName || '';
 
@@ -716,7 +699,28 @@
       return { ok: true, user };
     } catch (e) {
       console.warn('[online] Google Sign-In failed:', e);
-      return { ok: false, error: e.message || 'failed' };
+      let msg = T ? T.t('google_failed') : 'Google Sign-In failed';
+      const isAr = CC.i18n ? CC.i18n.getLang() === 'ar' : true;
+      if (e.code === 'auth/operation-not-allowed') {
+        msg = isAr
+          ? 'يجب تفعيل Google في Firebase Console (Authentication > Sign-in method)'
+          : 'Google sign-in is disabled in Firebase Console (Authentication > Sign-in method)';
+      } else if (e.code === 'auth/unauthorized-domain') {
+        msg = isAr
+          ? 'هذا النطاق غير مصرح به في Firebase Console (Authorized Domains)'
+          : 'Domain not authorized in Firebase Console (Authorized Domains)';
+      } else if (e.code === 'auth/popup-closed-by-user') {
+        msg = isAr
+          ? 'تم إغلاق نافذة تسجيل الدخول'
+          : 'Sign-in popup was closed';
+      } else if (e.code === 'auth/network-request-failed') {
+        msg = isAr
+          ? 'تعذر الاتصال بالشبكة'
+          : 'Network request failed';
+      } else if (e.message) {
+        msg = e.message;
+      }
+      return { ok: false, error: e.code || 'failed', msg: msg };
     }
   }
 

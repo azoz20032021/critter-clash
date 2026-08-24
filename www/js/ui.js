@@ -536,7 +536,7 @@
             } else {
               btnIn.disabled = false;
               btnIn.textContent = T.t('google_signin');
-              const msg = (res.error && res.error.length < 50) ? res.error : T.t('google_failed');
+              const msg = res.msg || res.error || T.t('google_failed');
               toast(msg, 'bad');
             }
           };

@@ -63,6 +63,17 @@
     return Math.round(sum * 10);
   }
 
+  /** Cap all critters in a team to a maximum level (e.g. 110 for friend online duels) */
+  function capTeamLevel(team, maxLevel = 110) {
+    if (!team || !Array.isArray(team)) return team;
+    return team.map(u => {
+      const cappedLv = Math.min(u.level, maxLevel);
+      if (cappedLv === u.level) return u;
+      const def = u.def || DATA.critterById(u.id) || DATA.getCritter(u.tier);
+      return unitFrom(def, cappedLv, u.mut);
+    });
+  }
+
   /* ---------------------------------------------------------
      Share codes
      --------------------------------------------------------- */
@@ -373,7 +384,7 @@
   }
 
   CC.arena = {
-    TEAM_SIZE, myTeam, unitFrom, powerRating, encodeTeam, decodeTeam,
+    TEAM_SIZE, myTeam, unitFrom, powerRating, capTeamLevel, encodeTeam, decodeTeam,
     generateRival, rivalSlate, simulate, battleSeed, applyResult, rankOf, botName,
     tapDamageOf, offlineDrainPerSec
   };

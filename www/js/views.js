@@ -207,8 +207,16 @@
   let battle = null;
 
   function openBattle(opp, seed, isLiveDuel) {
-    const mine = AR.myTeam(g);
+    const isFriendFight = !!isLiveDuel || !!(opp && (opp.isFriend || opp.friendCode));
+    let mine = AR.myTeam(g);
     if (!mine.length) { CC.ui.toast(T.t('need_team'), 'bad'); return; }
+
+    if (isFriendFight) {
+      mine = AR.capTeamLevel(mine, 110);
+      if (opp && opp.team) {
+        opp.team = AR.capTeamLevel(opp.team, 110);
+      }
+    }
 
     const isLive = !!isLiveDuel;
     // If not live duel and opponent is offline or bot/asynchronous, apply offline drain penalty
@@ -384,7 +392,9 @@
         if (!AR.myTeam(g).length) { CC.ui.toast(T.t('need_team'), 'bad'); return; }
         const opp = await CC.online.attackFriend(f.uid);
         if (!opp) { CC.ui.toast(T.t('network_error'), 'bad'); return; }
-        const mine = AR.myTeam(g);
+        opp.isFriend = true;
+        const mine = AR.capTeamLevel(AR.myTeam(g), 110);
+        opp.team = AR.capTeamLevel(opp.team, 110);
         const myPR = AR.powerRating(mine);
         const oppPR = AR.powerRating(opp.team);
         openOnlineBattle(opp, AR.battleSeed(myPR, oppPR, Date.now() & 0xffff), false);
@@ -441,12 +451,13 @@
           const opp = {
             uid: challenge.challengerUid,
             name: decoded.name || challenge.challengerName || 'Player',
-            team: decoded.team,
+            team: AR.capTeamLevel(decoded.team, 110),
             stage: decoded.stage || 1,
-            trophies: 0
+            trophies: 0,
+            isFriend: true
           };
           CC.ui.toast(T.t('accept_challenge'), 'good');
-          openOnlineBattle(opp, challenge.seed);
+          openOnlineBattle(opp, challenge.seed, true);
         } catch (e) {
           CC.ui.toast(T.t('network_error'), 'bad');
         }
@@ -500,11 +511,12 @@
         const opp = {
           uid: friendUid,
           name: statusRes.oppName || friendName,
-          team: statusRes.oppTeam,
+          team: AR.capTeamLevel(statusRes.oppTeam, 110),
           stage: 1,
-          trophies: 0
+          trophies: 0,
+          isFriend: true
         };
-        openOnlineBattle(opp, statusRes.seed);
+        openOnlineBattle(opp, statusRes.seed, true);
       } else if (statusRes.status === 'rejected') {
         CC.ui.toast(T.t('challenge_rejected'), 'bad');
       }

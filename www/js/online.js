@@ -48,6 +48,32 @@
       db = firebase.database();
       auth = firebase.auth();
 
+      // Check redirect sign-in result if user came from Google redirect
+      try {
+        const redirectRes = await auth.getRedirectResult();
+        if (redirectRes && redirectRes.user) {
+          const user = redirectRes.user;
+          uid = user.uid;
+          g.online.uid = uid;
+          g.online.isAnonymous = user.isAnonymous;
+          g.online.email = user.email || '';
+          g.online.displayName = user.displayName || '';
+          const cloudState = await loadCloudState();
+          if (cloudState) {
+            Object.assign(g, cloudState);
+            g.online.uid = uid;
+            g.online.isAnonymous = false;
+            CC.state.save(g, true);
+            if (CC.ui && CC.ui.updateHud) CC.ui.updateHud();
+            if (CC.ui && CC.ui.refreshLists) CC.ui.refreshLists(true);
+          } else {
+            await saveCloudState();
+          }
+        }
+      } catch (redirErr) {
+        console.warn('[online] getRedirectResult note:', redirErr);
+      }
+
       // Sign in anonymously if not already signed in
       if (auth.currentUser) {
         uid = auth.currentUser.uid;
@@ -601,40 +627,90 @@
 
   /* ─── Google Authentication ────────────────────────────── */
   async function signInWithGoogle() {
-    if (!ready || !auth) return { ok: false, error: 'offline' };
-    const provider = new firebase.auth.GoogleAuthProvider();
+    if (typeof firebase === 'undefined') return { ok: false, error: 'offline' };
+
     try {
-      let result;
+      if (!firebase.apps.length) {
+        firebase.initializeApp(FIREBASE_CONFIG);
+      }
+      if (!auth) auth = firebase.auth();
+      if (!db) db = firebase.database();
+    } catch (e) {
+      return { ok: false, error: 'init_failed' };
+    }
+
+    const provider = new firebase.auth.GoogleAuthProvider();
+    provider.setCustomParameters({ prompt: 'select_account' });
+
+    try {
+      let result = null;
       if (auth.currentUser && auth.currentUser.isAnonymous) {
         try {
           result = await auth.currentUser.linkWithPopup(provider);
         } catch (linkErr) {
-          if (linkErr.code === 'auth/credential-already-in-use') {
+          // If the Google account is already linked to another account, sign in directly
+          if (linkErr.code === 'auth/credential-already-in-use' ||
+              linkErr.code === 'auth/email-already-in-use' ||
+              linkErr.code === 'auth/account-exists-with-different-credential') {
             result = await auth.signInWithPopup(provider);
+          } else if (linkErr.code === 'auth/popup-blocked') {
+            await auth.signInWithRedirect(provider);
+            return { ok: true, redirect: true };
           } else {
-            throw linkErr;
+            // Try direct popup fallback
+            result = await auth.signInWithPopup(provider);
           }
         }
       } else {
-        result = await auth.signInWithPopup(provider);
+        try {
+          result = await auth.signInWithPopup(provider);
+        } catch (popErr) {
+          if (popErr.code === 'auth/popup-blocked') {
+            await auth.signInWithRedirect(provider);
+            return { ok: true, redirect: true };
+          }
+          throw popErr;
+        }
+      }
+
+      if (!result || !result.user) {
+        return { ok: false, error: 'no_user' };
       }
 
       const user = result.user;
       uid = user.uid;
+      ready = true;
       g.online.uid = uid;
       g.online.isAnonymous = user.isAnonymous;
       g.online.email = user.email || '';
       g.online.displayName = user.displayName || '';
+
       if (!g.playerName && user.displayName) {
         g.playerName = user.displayName.slice(0, 18);
       }
 
       if (!g.online.friendCode) {
-        g.online.friendCode = await generateUniqueFriendCode();
+        g.online.friendCode = randomCode();
+      }
+
+      // Check if this Google account already had cloud save data
+      const cloudState = await loadCloudState();
+      if (cloudState) {
+        // Merge cloud state into active state g
+        Object.assign(g, cloudState);
+        g.online.uid = uid;
+        g.online.isAnonymous = false;
+        g.online.email = user.email || '';
+        g.online.displayName = user.displayName || '';
+        CC.state.save(g, true);
+        if (CC.ui && CC.ui.updateHud) CC.ui.updateHud();
+        if (CC.ui && CC.ui.refreshLists) CC.ui.refreshLists(true);
+      } else {
+        // Save current local progress to cloud
+        await saveCloudState();
       }
 
       await syncMyData();
-      await saveCloudState();
       CC.state.save(g, true);
 
       return { ok: true, user };

@@ -529,13 +529,15 @@
             btnIn.textContent = T.t('searching');
             const res = await CC.online.signInWithGoogle();
             if (res.ok) {
+              if (res.redirect) return;
               toast(T.t('google_success'), 'good');
               CC.audio.play('achieve');
               buildMore();
             } else {
               btnIn.disabled = false;
               btnIn.textContent = T.t('google_signin');
-              toast(T.t('google_failed'), 'bad');
+              const msg = (res.error && res.error.length < 50) ? res.error : T.t('google_failed');
+              toast(msg, 'bad');
             }
           };
         }

@@ -133,9 +133,11 @@
         .once('value');
 
       const candidates = [];
+      const myCode = g.online.friendCode || '';
       snap.forEach(child => {
         const data = child.val();
-        if (child.key === uid) return;  // skip self
+        if (child.key === uid) return;  // skip self by UID
+        if (data.friendCode && data.friendCode === myCode) return; // skip self by friend code
         if (!data.team) return;         // skip players with no team
         const trophies = data.trophies || 0;
         const diff = Math.abs(trophies - myTrophies);
@@ -275,7 +277,7 @@
   }
 
   async function attackFriend(friendUid) {
-    if (!ready) return null;
+    if (!ready || !friendUid || friendUid === uid) return null;
     try {
       const snap = await db.ref('players/' + friendUid).once('value');
       if (!snap.exists()) return null;

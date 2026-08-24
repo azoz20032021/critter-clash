@@ -172,6 +172,7 @@
     friend_added:      { ar: 'تمت إضافة الصديق!', en: 'Friend added!' },
     friend_not_found:  { ar: 'الكود غير موجود', en: 'Code not found' },
     friend_self:       { ar: 'هذا كودك أنت!', en: "That's your own code!" },
+    cannot_fight_self: { ar: 'لا يمكنك قتال نفسك!', en: 'You cannot fight yourself!' },
     already_friend:    { ar: 'هذا الشخص صديقك بالفعل', en: 'Already friends' },
     attack_friend:     { ar: 'هجوم', en: 'Attack' },
     remove_friend:     { ar: 'حذف', en: 'Remove' },

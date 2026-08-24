@@ -618,12 +618,18 @@
       '<button class="btn gold" data-ok>' + T.t('fight') + '</button></div>');
     $('[data-close]', m).onclick = () => CC.ui.closeModal(m);
     $('[data-ok]', m).onclick = () => {
-      const code = $('textarea', m).value;
+      const code = $('textarea', m).value.trim();
+      if (!code) return;
+      const mine = AR.encodeTeam(g, g.playerName);
+      const myFc = (g.online.friendCode || '').toUpperCase();
+      if (code === mine || code.toUpperCase() === myFc) {
+        CC.ui.toast(T.t('cannot_fight_self'), 'bad');
+        return;
+      }
       let opp;
       try { opp = AR.decodeTeam(code); }
       catch (e) { CC.ui.toast(T.t('bad_code'), 'bad'); return; }
       CC.ui.closeModal(m);
-      const mine = AR.encodeTeam(g, g.playerName);
       /* both players hash the same pair of codes, so both see the same fight */
       const seed = AR.battleSeed(mine < code ? mine : code, mine < code ? code : mine, 0);
       openBattle(opp, seed);

@@ -179,7 +179,8 @@
       const rarity = mut ? CC.mut.RARITIES[mut.rarity] : CC.mut.RARITIES[0];
       const trait = mut ? CC.mut.traitOf(mut) : null;
       const rel = Math.max(1e-4, Math.pow(10, Math.min(0, u.logPower - scale)));
-      const hp = 3000 * rel * rarity.arena * (trait && trait.hp ? trait.hp : 1);
+      const sideHpMult = (side === 0) ? 3 : 1;
+      const hp = 3000 * rel * rarity.arena * (trait && trait.hp ? trait.hp : 1) * sideHpMult;
       const atk = 420 * rel * rarity.arena * (trait && trait.atk ? trait.atk : 1);
       const spd = 1 * (trait && trait.spd ? trait.spd : 1);
       return {

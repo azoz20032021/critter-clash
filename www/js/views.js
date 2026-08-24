@@ -128,50 +128,72 @@
      Friend code display
      ========================================================= */
   function renderFriendCode() {
-    const code = g.online.friendCode || '------';
-    $('#fc-code').textContent = code;
-    $('#fc-label').textContent = T.t('your_code');
+    if (!g.online.friendCode) {
+      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+      let code = '';
+      for (let i = 0; i < 6; i++) code += chars[Math.floor(Math.random() * chars.length)];
+      g.online.friendCode = code;
+      CC.state.save(g, true);
+    }
+    const fcEl = $('#fc-code');
+    if (fcEl) fcEl.textContent = g.online.friendCode;
+    const lblEl = $('#fc-label');
+    if (lblEl) lblEl.textContent = T.t('your_code');
   }
 
   /* =========================================================
-     Online Attack (matchmaking)
+     Online Attack (matchmaking with seamless offline fallback)
      ========================================================= */
   async function onlineAttack() {
-    if (!CC.online || !CC.online.isReady()) {
-      CC.ui.toast(T.t('online_off'), 'bad');
-      return;
-    }
     if (!AR.myTeam(g).length) {
       CC.ui.toast(T.t('need_team'), 'bad');
       return;
     }
 
     const btn = $('#btn-online-attack');
-    btn.disabled = true;
-    btn.textContent = T.t('searching');
-    btn.classList.add('searching');
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = T.t('searching');
+      btn.classList.add('searching');
+    }
 
     try {
-      const opp = await CC.online.findOpponent();
-      btn.disabled = false;
-      btn.textContent = T.t('online_attack');
-      btn.classList.remove('searching');
+      let opp = null;
+      if (CC.online && CC.online.isReady()) {
+        try { opp = await CC.online.findOpponent(); } catch (e) { opp = null; }
+      }
 
+      // If offline or no online opponent found in DB, fallback to matched rival
       if (!opp) {
-        CC.ui.toast(T.t('no_opponents'), 'bad');
-        return;
+        const myTrophies = g.arena.trophies || 0;
+        const bot = AR.generateRival(g, Date.now() & 0xffff, 1.0);
+        bot.trophies = Math.max(0, myTrophies + Math.floor(Math.random() * 40 - 20));
+        bot.online = false;
+        bot.generated = true;
+        opp = bot;
+      }
+
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = T.t('online_attack');
+        btn.classList.remove('searching');
       }
 
       const mine = AR.myTeam(g);
       const myPR = AR.powerRating(mine);
       const oppPR = AR.powerRating(opp.team);
       const seed = AR.battleSeed(myPR, oppPR, Date.now() & 0xffff);
-      openOnlineBattle(opp, seed);
+      openOnlineBattle(opp, seed, false);
     } catch (e) {
-      btn.disabled = false;
-      btn.textContent = T.t('online_attack');
-      btn.classList.remove('searching');
-      CC.ui.toast(T.t('network_error'), 'bad');
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = T.t('online_attack');
+        btn.classList.remove('searching');
+      }
+      const myTrophies = g.arena.trophies || 0;
+      const bot = AR.generateRival(g, Date.now() & 0xffff, 1.0);
+      bot.trophies = myTrophies;
+      openOnlineBattle(bot, Date.now() & 0xffff, false);
     }
   }
 

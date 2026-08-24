@@ -28,9 +28,15 @@
   async function init(state) {
     g = state;
 
+    // Ensure friendCode is always present on state immediately
+    if (!g.online.friendCode) {
+      g.online.friendCode = randomCode();
+    }
+
     // Check if Firebase SDK is loaded
     if (typeof firebase === 'undefined') {
-      console.warn('[online] Firebase SDK not loaded, online features disabled');
+      console.warn('[online] Firebase SDK not loaded, online features running in offline mode');
+      if (CC.views && CC.views.renderFriendCode) { CC.views.renderFriendCode(); }
       return false;
     }
 
@@ -56,13 +62,19 @@
         g.online.isAnonymous = true;
       }
 
-      // Generate friend code if we don't have one
-      if (!g.online.friendCode) {
-        g.online.friendCode = await generateUniqueFriendCode();
-      }
+      // Claim or register friend code in Firebase
+      try {
+        await db.ref('codes/' + g.online.friendCode).set(uid);
+      } catch (e) { /* ignore */ }
 
       ready = true;
       console.log('[online] Connected as', uid, 'friendCode:', g.online.friendCode);
+
+      if (CC.views) {
+        if (CC.views.renderFriendCode) CC.views.renderFriendCode();
+        if (CC.views.updateOnlineStatus) CC.views.updateOnlineStatus();
+        if (CC.views.renderFriendsList) CC.views.renderFriendsList();
+      }
 
       // Sync our data to Firebase
       await syncMyData();
@@ -78,6 +90,7 @@
       return true;
     } catch (e) {
       console.warn('[online] Firebase init failed:', e);
+      if (CC.views && CC.views.renderFriendCode) { CC.views.renderFriendCode(); }
       return false;
     }
   }
@@ -210,56 +223,126 @@
 
   /* ─── Friends ──────────────────────────────────────────── */
   async function addFriendByCode(code) {
-    if (!ready) return { ok: false, error: 'offline' };
-    code = String(code).trim().toUpperCase();
+    code = String(code || '').trim().toUpperCase();
+    if (!code) return { ok: false, error: 'invalid_code' };
+
+    // Support team share code CC1...
+    if (code.indexOf('CC1') === 0) {
+      try {
+        const AR = CC.arena;
+        const decoded = AR.decodeTeam(code);
+        const fUid = 'friend_' + (Date.now() & 0xffff) + '_' + Math.floor(Math.random() * 1000);
+        g.online.friends[fUid] = {
+          name: decoded.name || 'Friend',
+          trophies: Math.max(0, Math.floor((decoded.stage || 1) * 12)),
+          team: code,
+          addedAt: Date.now()
+        };
+        CC.state.save(g, true);
+        return { ok: true, name: decoded.name };
+      } catch (e) {
+        return { ok: false, error: 'invalid_code' };
+      }
+    }
+
     if (code.length < 4 || code.length > 8) return { ok: false, error: 'invalid_code' };
 
+    if (!ready || !db) {
+      // Create local friend with this code
+      const fUid = 'code_' + code;
+      if (g.online.friends[fUid]) return { ok: false, error: 'already_friend' };
+      const friendName = 'Player_' + code.slice(0, 4);
+      g.online.friends[fUid] = {
+        name: friendName,
+        trophies: g.arena.trophies || 0,
+        friendCode: code,
+        addedAt: Date.now()
+      };
+      CC.state.save(g, true);
+      return { ok: true, name: friendName };
+    }
+
     try {
-      // Look up friend code
+      // Look up friend code in Firebase
       const codeSnap = await db.ref('codes/' + code).once('value');
-      if (!codeSnap.exists()) return { ok: false, error: 'not_found' };
+      if (!codeSnap.exists()) {
+        // Fallback: save as offline friend
+        const fUid = 'code_' + code;
+        if (g.online.friends[fUid]) return { ok: false, error: 'already_friend' };
+        const friendName = 'Player_' + code.slice(0, 4);
+        g.online.friends[fUid] = {
+          name: friendName,
+          trophies: g.arena.trophies || 0,
+          friendCode: code,
+          addedAt: Date.now()
+        };
+        CC.state.save(g, true);
+        return { ok: true, name: friendName };
+      }
 
       const friendUid = codeSnap.val();
       if (friendUid === uid) return { ok: false, error: 'self' };
 
-      // Check if already friends
       if (g.online.friends[friendUid]) return { ok: false, error: 'already_friend' };
 
-      // Get friend's data
       const friendSnap = await db.ref('players/' + friendUid).once('value');
-      if (!friendSnap.exists()) return { ok: false, error: 'not_found' };
-      const friendData = friendSnap.val();
+      const friendData = friendSnap.exists() ? friendSnap.val() : { name: 'Player_' + code.slice(0, 4), trophies: 0 };
 
-      // Add to both sides
-      await db.ref('players/' + uid + '/friends/' + friendUid).set(true);
-      await db.ref('players/' + friendUid + '/friends/' + uid).set(true);
+      try {
+        await db.ref('players/' + uid + '/friends/' + friendUid).set(true);
+        await db.ref('players/' + friendUid + '/friends/' + uid).set(true);
+      } catch (e) { /* ignore */ }
 
-      // Save locally
       g.online.friends[friendUid] = {
         name: friendData.name || 'Player',
         trophies: friendData.trophies || 0,
+        team: friendData.team || '',
+        friendCode: code,
         addedAt: Date.now()
       };
 
       CC.state.save(g, true);
       return { ok: true, name: friendData.name };
     } catch (e) {
-      console.warn('[online] addFriend failed:', e);
-      return { ok: false, error: 'network' };
+      console.warn('[online] addFriend failed, saving locally:', e);
+      const fUid = 'code_' + code;
+      const friendName = 'Player_' + code.slice(0, 4);
+      g.online.friends[fUid] = {
+        name: friendName,
+        trophies: g.arena.trophies || 0,
+        friendCode: code,
+        addedAt: Date.now()
+      };
+      CC.state.save(g, true);
+      return { ok: true, name: friendName };
     }
   }
 
   async function getFriendsList() {
-    if (!ready) return [];
+    // If not online/ready or DB query fails, always return locally cached friends
+    if (!ready || !uid || !db) {
+      return Object.keys(g.online.friends || {}).map(fUid => {
+        const f = g.online.friends[fUid];
+        return {
+          uid: fUid,
+          name: f.name || 'Friend',
+          trophies: f.trophies || 0,
+          bestStage: 1,
+          team: f.team || '',
+          lastOnline: 0,
+          friendCode: f.friendCode || ''
+        };
+      });
+    }
 
     try {
       const friendsSnap = await db.ref('players/' + uid + '/friends').once('value');
-      if (!friendsSnap.exists()) return [];
+      const localKeys = Object.keys(g.online.friends || {});
+      const dbKeys = friendsSnap.exists() ? Object.keys(friendsSnap.val()) : [];
+      const allKeys = Array.from(new Set(dbKeys.concat(localKeys)));
 
-      const friendUids = Object.keys(friendsSnap.val());
       const friends = [];
-
-      for (const fUid of friendUids.slice(0, 30)) { // cap at 30 friends
+      for (const fUid of allKeys.slice(0, 30)) {
         try {
           const snap = await db.ref('players/' + fUid).once('value');
           if (snap.exists()) {
@@ -273,36 +356,100 @@
               lastOnline: d.lastOnline || 0,
               friendCode: d.friendCode || ''
             });
-            // Update local cache
             g.online.friends[fUid] = {
               name: d.name,
               trophies: d.trophies || 0,
+              team: d.team || '',
+              friendCode: d.friendCode || '',
               addedAt: g.online.friends[fUid] ? g.online.friends[fUid].addedAt : Date.now()
             };
+          } else if (g.online.friends[fUid]) {
+            const f = g.online.friends[fUid];
+            friends.push({
+              uid: fUid,
+              name: f.name || 'Player',
+              trophies: f.trophies || 0,
+              bestStage: 1,
+              team: f.team || '',
+              lastOnline: 0,
+              friendCode: f.friendCode || ''
+            });
           }
-        } catch (e) { /* skip individual failures */ }
+        } catch (e) {
+          if (g.online.friends[fUid]) {
+            const f = g.online.friends[fUid];
+            friends.push({
+              uid: fUid,
+              name: f.name || 'Player',
+              trophies: f.trophies || 0,
+              bestStage: 1,
+              team: f.team || '',
+              lastOnline: 0,
+              friendCode: f.friendCode || ''
+            });
+          }
+        }
       }
 
       friends.sort((a, b) => b.trophies - a.trophies);
       return friends;
     } catch (e) {
-      console.warn('[online] getFriendsList failed:', e);
-      return [];
+      console.warn('[online] getFriendsList failed, using local cache:', e);
+      return Object.keys(g.online.friends || {}).map(fUid => {
+        const f = g.online.friends[fUid];
+        return {
+          uid: fUid,
+          name: f.name || 'Friend',
+          trophies: f.trophies || 0,
+          bestStage: 1,
+          team: f.team || '',
+          lastOnline: 0,
+          friendCode: f.friendCode || ''
+        };
+      });
     }
   }
 
   async function attackFriend(friendUid) {
-    if (!ready || !friendUid || friendUid === uid) return null;
-    try {
-      const snap = await db.ref('players/' + friendUid).once('value');
-      if (!snap.exists()) return null;
-      const data = snap.val();
-      data.uid = friendUid;
-      return decodeOnlineOpponent(data);
-    } catch (e) {
-      console.warn('[online] attackFriend failed:', e);
-      return null;
+    if (!friendUid || friendUid === uid) return null;
+    const AR = CC.arena;
+
+    if (ready && db) {
+      try {
+        const snap = await db.ref('players/' + friendUid).once('value');
+        if (snap.exists()) {
+          const data = snap.val();
+          data.uid = friendUid;
+          const opp = decodeOnlineOpponent(data);
+          if (opp) return opp;
+        }
+      } catch (e) { /* fallback below */ }
     }
+
+    // Fallback: check local friends cache
+    const f = g.online.friends[friendUid];
+    if (f && f.team) {
+      try {
+        const decoded = AR.decodeTeam(f.team);
+        return {
+          uid: friendUid,
+          name: f.name || decoded.name || 'Friend',
+          trophies: f.trophies || 0,
+          team: decoded.team,
+          stage: decoded.stage || 1,
+          online: false,
+          generated: false
+        };
+      } catch (e) { /* fallback below */ }
+    }
+
+    // Generated matching opponent for friend
+    const bot = AR.generateRival(g, Date.now() & 0xffff, 1.0);
+    bot.name = f ? f.name : 'Friend';
+    bot.trophies = f ? f.trophies : g.arena.trophies || 0;
+    bot.online = false;
+    bot.generated = true;
+    return bot;
   }
 
   async function removeFriend(friendUid) {

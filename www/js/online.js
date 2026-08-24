@@ -222,20 +222,20 @@
   }
 
   /* ─── Friends ──────────────────────────────────────────── */
-  async function addFriendByCode(code) {
-    code = String(code || '').trim().toUpperCase();
-    if (!code) return { ok: false, error: 'invalid_code' };
+  async function addFriendByCode(rawCode) {
+    rawCode = String(rawCode || '').trim();
+    if (!rawCode) return { ok: false, error: 'invalid_code' };
 
-    // Support team share code CC1...
-    if (code.indexOf('CC1') === 0) {
+    // Support team share code CC1... (case sensitive)
+    if (rawCode.indexOf('CC1') === 0) {
       try {
         const AR = CC.arena;
-        const decoded = AR.decodeTeam(code);
+        const decoded = AR.decodeTeam(rawCode);
         const fUid = 'friend_' + (Date.now() & 0xffff) + '_' + Math.floor(Math.random() * 1000);
         g.online.friends[fUid] = {
           name: decoded.name || 'Friend',
           trophies: Math.max(0, Math.floor((decoded.stage || 1) * 12)),
-          team: code,
+          team: rawCode,
           addedAt: Date.now()
         };
         CC.state.save(g, true);
@@ -245,10 +245,13 @@
       }
     }
 
-    if (code.length < 4 || code.length > 8) return { ok: false, error: 'invalid_code' };
+    const code = rawCode.toUpperCase();
+    if (code === (g.online.friendCode || '').toUpperCase()) {
+      return { ok: false, error: 'self' };
+    }
 
     if (!ready || !db) {
-      // Create local friend with this code
+      // Local friend creation
       const fUid = 'code_' + code;
       if (g.online.friends[fUid]) return { ok: false, error: 'already_friend' };
       const friendName = 'Player_' + code.slice(0, 4);
@@ -263,48 +266,64 @@
     }
 
     try {
-      // Look up friend code in Firebase
+      let friendUid = null;
+      let friendData = null;
+
+      // 1. Check codes/{code}
       const codeSnap = await db.ref('codes/' + code).once('value');
-      if (!codeSnap.exists()) {
-        // Fallback: save as offline friend
-        const fUid = 'code_' + code;
-        if (g.online.friends[fUid]) return { ok: false, error: 'already_friend' };
-        const friendName = 'Player_' + code.slice(0, 4);
-        g.online.friends[fUid] = {
-          name: friendName,
-          trophies: g.arena.trophies || 0,
+      if (codeSnap.exists()) {
+        friendUid = codeSnap.val();
+      } else {
+        // 2. Query players by friendCode
+        const pSnap = await db.ref('players').orderByChild('friendCode').equalTo(code).once('value');
+        if (pSnap.exists()) {
+          pSnap.forEach(ch => {
+            friendUid = ch.key;
+            friendData = ch.val();
+          });
+        }
+      }
+
+      if (friendUid && friendUid === uid) return { ok: false, error: 'self' };
+      if (friendUid && g.online.friends[friendUid]) return { ok: false, error: 'already_friend' };
+
+      if (friendUid) {
+        if (!friendData) {
+          const friendSnap = await db.ref('players/' + friendUid).once('value');
+          friendData = friendSnap.exists() ? friendSnap.val() : {};
+        }
+
+        try {
+          await db.ref('players/' + uid + '/friends/' + friendUid).set(true);
+          await db.ref('players/' + friendUid + '/friends/' + uid).set(true);
+        } catch (e) { /* ignore */ }
+
+        g.online.friends[friendUid] = {
+          name: friendData.name || ('Player_' + code.slice(0, 4)),
+          trophies: friendData.trophies || 0,
+          team: friendData.team || '',
           friendCode: code,
           addedAt: Date.now()
         };
+
         CC.state.save(g, true);
-        return { ok: true, name: friendName };
+        return { ok: true, name: friendData.name || ('Player_' + code.slice(0, 4)) };
       }
 
-      const friendUid = codeSnap.val();
-      if (friendUid === uid) return { ok: false, error: 'self' };
-
-      if (g.online.friends[friendUid]) return { ok: false, error: 'already_friend' };
-
-      const friendSnap = await db.ref('players/' + friendUid).once('value');
-      const friendData = friendSnap.exists() ? friendSnap.val() : { name: 'Player_' + code.slice(0, 4), trophies: 0 };
-
-      try {
-        await db.ref('players/' + uid + '/friends/' + friendUid).set(true);
-        await db.ref('players/' + friendUid + '/friends/' + uid).set(true);
-      } catch (e) { /* ignore */ }
-
-      g.online.friends[friendUid] = {
-        name: friendData.name || 'Player',
-        trophies: friendData.trophies || 0,
-        team: friendData.team || '',
+      // If not in DB, add as offline/custom friend
+      const fUid = 'code_' + code;
+      if (g.online.friends[fUid]) return { ok: false, error: 'already_friend' };
+      const friendName = 'Player_' + code.slice(0, 4);
+      g.online.friends[fUid] = {
+        name: friendName,
+        trophies: g.arena.trophies || 0,
         friendCode: code,
         addedAt: Date.now()
       };
-
       CC.state.save(g, true);
-      return { ok: true, name: friendData.name };
+      return { ok: true, name: friendName };
     } catch (e) {
-      console.warn('[online] addFriend failed, saving locally:', e);
+      console.warn('[online] addFriend fallback:', e);
       const fUid = 'code_' + code;
       const friendName = 'Player_' + code.slice(0, 4);
       g.online.friends[fUid] = {
@@ -565,6 +584,19 @@
       console.warn('[online] getAttackLog failed:', e);
       return g.online.attackLog || [];
     }
+  }
+
+  async function clearMyAttacks() {
+    if (g && g.online) {
+      g.online.attackLog = [];
+      CC.state.save(g, true);
+    }
+    if (ready && db && uid) {
+      try {
+        await db.ref('attacks/' + uid).remove();
+      } catch (e) { /* ignore */ }
+    }
+    return true;
   }
 
   /* ─── Google Authentication ────────────────────────────── */

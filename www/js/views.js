@@ -325,13 +325,27 @@
     const host = $('#friends-list');
     if (!host) return;
 
-    if (!CC.online || !CC.online.isReady()) {
-      host.innerHTML = '<div class="empty-msg">' + T.t('online_off') + '</div>';
-      return;
+    let friends = [];
+    if (CC.online) {
+      try {
+        friends = await CC.online.getFriendsList();
+      } catch (e) { friends = []; }
     }
 
-    host.innerHTML = '<div class="empty-msg">' + T.t('searching') + '</div>';
-    const friends = await CC.online.getFriendsList();
+    if (!friends.length && g.online && g.online.friends) {
+      friends = Object.keys(g.online.friends).map(fUid => {
+        const f = g.online.friends[fUid];
+        return {
+          uid: fUid,
+          name: f.name || 'Friend',
+          trophies: f.trophies || 0,
+          bestStage: 1,
+          team: f.team || '',
+          lastOnline: 0,
+          friendCode: f.friendCode || ''
+        };
+      });
+    }
 
     host.innerHTML = '';
     if (!friends.length) {
@@ -342,7 +356,7 @@
     friends.forEach(f => {
       const el = document.createElement('div');
       el.className = 'friend-card';
-      const rank = AR.rankOf(f.trophies);
+      const rank = AR.rankOf(f.trophies || 0);
       const isOnline = f.lastOnline && (Date.now() - f.lastOnline < 300000); // 5min
 
       el.innerHTML =
@@ -373,7 +387,7 @@
         const mine = AR.myTeam(g);
         const myPR = AR.powerRating(mine);
         const oppPR = AR.powerRating(opp.team);
-        openOnlineBattle(opp, AR.battleSeed(myPR, oppPR, Date.now() & 0xffff));
+        openOnlineBattle(opp, AR.battleSeed(myPR, oppPR, Date.now() & 0xffff), false);
       };
 
       $('[data-remove]', el).onclick = async () => {
@@ -507,14 +521,14 @@
     const m = CC.ui.modal(
       '<div class="big-ico">👥</div><h3>' + T.t('add_friend') + '</h3>' +
       '<p>' + T.t('enter_code') + '</p>' +
-      '<input class="nameinput" id="friend-code-input" maxlength="8" placeholder="ABC123" style="margin:10px 0;width:100%;text-align:center;font-size:1.2rem;letter-spacing:4px">' +
+      '<input class="nameinput" id="friend-code-input" maxlength="300" placeholder="ABC123" style="margin:10px 0;width:100%;text-align:center;font-size:1.1rem;letter-spacing:2px">' +
       '<div class="btns">' +
         '<button class="btn ghost" data-close>' + T.t('cancel') + '</button>' +
         '<button class="btn gold" data-ok>' + T.t('add_friend') + '</button>' +
       '</div>');
     $('[data-close]', m).onclick = () => CC.ui.closeModal(m);
     $('[data-ok]', m).onclick = async () => {
-      const code = $('#friend-code-input', m).value.trim().toUpperCase();
+      const code = $('#friend-code-input', m).value.trim();
       if (!code) return;
       $('[data-ok]', m).disabled = true;
       $('[data-ok]', m).textContent = T.t('searching');

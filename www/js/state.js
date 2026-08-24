@@ -25,6 +25,7 @@
       mutations: {},           // critterId -> { rarity, trait, element, shape, hue, seed }
       mutRolls: {},            // critterId -> how many times it has been re-rolled
       arena: { trophies: 0, wins: 0, losses: 0, lastOpponents: [], nextFree: 0 },
+      online: { uid: null, friendCode: '', friends: {}, attackLog: [], lastSync: 0 },
       skills: {},              // id -> { cdEnd, activeEnd }
       boosts: {},              // 'gold' | 'dmg' -> { mult, end }
 
@@ -183,6 +184,9 @@
     if (!g.mutRolls) g.mutRolls = {};
     if (!g.playerName) g.playerName = '';
     if (!g.arena) g.arena = { trophies: 0, wins: 0, losses: 0, lastOpponents: [], nextFree: 0 };
+    if (!g.online) g.online = { uid: null, friendCode: '', friends: {}, attackLog: [], lastSync: 0 };
+    if (!g.online.friends) g.online.friends = {};
+    if (!g.online.attackLog) g.online.attackLog = [];
     return g;
   }
 

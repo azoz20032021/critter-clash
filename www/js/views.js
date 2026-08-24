@@ -33,10 +33,18 @@
     $('#lbl-pr').textContent = T.t('power_rating');
     $('#arena-copy').textContent = T.t('my_team_code');
     $('#arena-friend').textContent = T.t('fight_friend');
+    $('#friends-title').textContent = T.t('friends_section');
+    $('#defense-title').textContent = T.t('defense_log');
+    $('#btn-online-attack').textContent = T.t('online_attack');
+    $('#fc-label').textContent = T.t('your_code');
     if (!rivals) rivals = AR.rivalSlate(g, rivalSalt);
     renderMyTeam();
     renderRivals();
+    renderFriendCode();
+    renderFriendsList();
+    renderDefenseLog();
     updateArena();
+    updateOnlineStatus();
   }
 
   function renderMyTeam() {
@@ -100,6 +108,236 @@
   }
 
   /* =========================================================
+     Online status indicator
+     ========================================================= */
+  function updateOnlineStatus() {
+    const el = $('#online-status');
+    if (!el) return;
+    const dot = $('i', el);
+    const txt = $('span', el);
+    if (CC.online && CC.online.isReady()) {
+      dot.className = 'status-dot online';
+      txt.textContent = T.t('online_label');
+    } else {
+      dot.className = 'status-dot offline';
+      txt.textContent = T.t('online_off');
+    }
+  }
+
+  /* =========================================================
+     Friend code display
+     ========================================================= */
+  function renderFriendCode() {
+    const code = g.online.friendCode || '------';
+    $('#fc-code').textContent = code;
+    $('#fc-label').textContent = T.t('your_code');
+  }
+
+  /* =========================================================
+     Online Attack (matchmaking)
+     ========================================================= */
+  async function onlineAttack() {
+    if (!CC.online || !CC.online.isReady()) {
+      CC.ui.toast(T.t('online_off'), 'bad');
+      return;
+    }
+    if (!AR.myTeam(g).length) {
+      CC.ui.toast(T.t('need_team'), 'bad');
+      return;
+    }
+
+    const btn = $('#btn-online-attack');
+    btn.disabled = true;
+    btn.textContent = T.t('searching');
+    btn.classList.add('searching');
+
+    try {
+      const opp = await CC.online.findOpponent();
+      btn.disabled = false;
+      btn.textContent = T.t('online_attack');
+      btn.classList.remove('searching');
+
+      if (!opp) {
+        CC.ui.toast(T.t('no_opponents'), 'bad');
+        return;
+      }
+
+      const mine = AR.myTeam(g);
+      const myPR = AR.powerRating(mine);
+      const oppPR = AR.powerRating(opp.team);
+      const seed = AR.battleSeed(myPR, oppPR, Date.now() & 0xffff);
+      openOnlineBattle(opp, seed);
+    } catch (e) {
+      btn.disabled = false;
+      btn.textContent = T.t('online_attack');
+      btn.classList.remove('searching');
+      CC.ui.toast(T.t('network_error'), 'bad');
+    }
+  }
+
+  function openOnlineBattle(opp, seed) {
+    // Wrap openBattle to report result to Firebase after
+    const origOpp = opp;
+    openBattle(opp, seed);
+
+    // Monkey-patch the finishBattle to also report online
+    const origFinish = finishBattle;
+    // We'll hook into the battle result via the battle object instead
+    // by checking in closeBattle
+    if (battle) {
+      battle._onlineOpp = origOpp;
+    }
+  }
+
+  /* =========================================================
+     Friends list
+     ========================================================= */
+  async function renderFriendsList() {
+    const host = $('#friends-list');
+    if (!host) return;
+
+    if (!CC.online || !CC.online.isReady()) {
+      host.innerHTML = '<div class="empty-msg">' + T.t('online_off') + '</div>';
+      return;
+    }
+
+    host.innerHTML = '<div class="empty-msg">' + T.t('searching') + '</div>';
+    const friends = await CC.online.getFriendsList();
+
+    host.innerHTML = '';
+    if (!friends.length) {
+      host.innerHTML = '<div class="empty-msg">' + T.t('no_friends') + '</div>';
+      return;
+    }
+
+    friends.forEach(f => {
+      const el = document.createElement('div');
+      el.className = 'friend-card';
+      const rank = AR.rankOf(f.trophies);
+      const isOnline = f.lastOnline && (Date.now() - f.lastOnline < 300000); // 5min
+
+      el.innerHTML =
+        '<div class="friend-info">' +
+          '<div class="friend-name">' +
+            '<i class="status-dot ' + (isOnline ? 'online' : 'offline') + '"></i>' +
+            '<span>' + (f.name || 'Player') + '</span>' +
+          '</div>' +
+          '<div class="friend-stats">' +
+            '<span style="color:' + rank.color + '">' + rank.icon + '</span>' +
+            ' 🏆 ' + (f.trophies || 0) +
+          '</div>' +
+        '</div>' +
+        '<div class="friend-actions">' +
+          '<button class="fight" data-attack>' + T.t('attack_friend') + '</button>' +
+          '<button class="mini-btn" data-remove title="Remove">✕</button>' +
+        '</div>';
+
+      $('[data-attack]', el).onclick = async () => {
+        if (!AR.myTeam(g).length) { CC.ui.toast(T.t('need_team'), 'bad'); return; }
+        const opp = await CC.online.attackFriend(f.uid);
+        if (!opp) { CC.ui.toast(T.t('network_error'), 'bad'); return; }
+        const mine = AR.myTeam(g);
+        const myPR = AR.powerRating(mine);
+        const oppPR = AR.powerRating(opp.team);
+        openOnlineBattle(opp, AR.battleSeed(myPR, oppPR, Date.now() & 0xffff));
+      };
+
+      $('[data-remove]', el).onclick = async () => {
+        CC.ui.confirmBox(T.t('confirm'), async () => {
+          await CC.online.removeFriend(f.uid);
+          renderFriendsList();
+          CC.ui.toast(T.t('saved'), 'good');
+        });
+      };
+
+      host.appendChild(el);
+    });
+  }
+
+  function openAddFriendModal() {
+    const m = CC.ui.modal(
+      '<div class="big-ico">👥</div><h3>' + T.t('add_friend') + '</h3>' +
+      '<p>' + T.t('enter_code') + '</p>' +
+      '<input class="nameinput" id="friend-code-input" maxlength="8" placeholder="ABC123" style="margin:10px 0;width:100%;text-align:center;font-size:1.2rem;letter-spacing:4px">' +
+      '<div class="btns">' +
+        '<button class="btn ghost" data-close>' + T.t('cancel') + '</button>' +
+        '<button class="btn gold" data-ok>' + T.t('add_friend') + '</button>' +
+      '</div>');
+    $('[data-close]', m).onclick = () => CC.ui.closeModal(m);
+    $('[data-ok]', m).onclick = async () => {
+      const code = $('#friend-code-input', m).value.trim().toUpperCase();
+      if (!code) return;
+      $('[data-ok]', m).disabled = true;
+      $('[data-ok]', m).textContent = T.t('searching');
+      const res = await CC.online.addFriendByCode(code);
+      if (res.ok) {
+        CC.ui.closeModal(m);
+        CC.ui.toast(T.t('friend_added') + ' ' + (res.name || ''), 'good');
+        CC.audio.play('achieve');
+        renderFriendsList();
+      } else {
+        $('[data-ok]', m).disabled = false;
+        $('[data-ok]', m).textContent = T.t('add_friend');
+        if (res.error === 'self') CC.ui.toast(T.t('friend_self'), 'bad');
+        else if (res.error === 'already_friend') CC.ui.toast(T.t('already_friend'), 'bad');
+        else if (res.error === 'not_found') CC.ui.toast(T.t('friend_not_found'), 'bad');
+        else CC.ui.toast(T.t('network_error'), 'bad');
+      }
+    };
+    // Auto focus input
+    setTimeout(() => {
+      const inp = $('#friend-code-input', m);
+      if (inp) inp.focus();
+    }, 100);
+  }
+
+  /* =========================================================
+     Defense log
+     ========================================================= */
+  async function renderDefenseLog() {
+    const host = $('#defense-log');
+    if (!host) return;
+
+    const log = (CC.online && CC.online.isReady())
+      ? await CC.online.getAttackLog()
+      : (g.online.attackLog || []);
+
+    host.innerHTML = '';
+    if (!log.length) {
+      host.innerHTML = '<div class="empty-msg">' + T.t('no_attacks') + '</div>';
+      return;
+    }
+
+    log.slice(0, 15).forEach(entry => {
+      const el = document.createElement('div');
+      el.className = 'defense-entry' + (entry.attackerWon ? ' breached' : ' defended');
+
+      const ago = formatTimeAgo(entry.timestamp);
+      el.innerHTML =
+        '<div class="de-icon">' + (entry.attackerWon ? '⚔️' : '🛡️') + '</div>' +
+        '<div class="de-info">' +
+          '<div class="de-name">' + (entry.attackerName || 'Player') + '</div>' +
+          '<div class="de-result">' +
+            (entry.attackerWon ? T.t('defended_fail') : T.t('defended_ok')) +
+            ' <span class="de-trophy">' + (entry.attackerWon ? '🏆 -' : '🏆 +') +
+            Math.abs(Math.round(entry.trophyDelta * 0.6)) + '</span>' +
+          '</div>' +
+        '</div>' +
+        '<div class="de-time">' + ago + '</div>';
+
+      host.appendChild(el);
+    });
+  }
+
+  function formatTimeAgo(ts) {
+    const diff = Math.floor((Date.now() - ts) / 1000);
+    if (diff < 60) return T.t('just_now') || 'now';
+    if (diff < 3600) return Math.floor(diff / 60) + 'm';
+    if (diff < 86400) return Math.floor(diff / 3600) + 'h';
+    return Math.floor(diff / 86400) + 'd';
+  }
+
+  /* =========================================================
      Battle screen
      ========================================================= */
   let battle = null;
@@ -109,15 +347,17 @@
     if (!mine.length) { CC.ui.toast(T.t('need_team'), 'bad'); return; }
     const res = AR.simulate(mine, opp.team, seed);
     const myPR = AR.powerRating(mine), oppPR = AR.powerRating(opp.team);
+    const myTrophies = g.arena.trophies || 0;
+    const oppTrophies = opp.trophies !== undefined ? opp.trophies : Math.max(0, Math.floor((opp.stage || 1) * 12));
 
     const el = document.createElement('div');
     el.className = 'battle-screen';
     el.innerHTML =
       '<div class="battle-top">' +
-        '<div class="side a"><div class="nm">' + (g.playerName || T.t('you')) + '</div>' +
+        '<div class="side a"><div class="nm"><span class="trophy-tag">🏆 ' + U.fmt(myTrophies) + '</span> ' + (g.playerName || T.t('you')) + '</div>' +
         '<div class="pw">' + T.t('power_rating') + ' ' + myPR + '</div></div>' +
         '<div class="vs">VS</div>' +
-        '<div class="side b"><div class="nm">' + opp.name + '</div>' +
+        '<div class="side b"><div class="nm">' + opp.name + ' <span class="trophy-tag">🏆 ' + U.fmt(oppTrophies) + '</span></div>' +
         '<div class="pw">' + T.t('power_rating') + ' ' + oppPR + '</div></div>' +
       '</div>' +
       '<canvas id="battle-canvas"></canvas>' +
@@ -307,6 +547,11 @@
     const r = AR.applyResult(g, won, battle.myPR, battle.oppPR);
     CC.state.save(g, true);
 
+    // If this was an online battle against a real player, report result to server
+    if (battle._onlineOpp && battle._onlineOpp.uid && CC.online) {
+      CC.online.reportAttack(battle._onlineOpp.uid, won, r.delta);
+    }
+
     const box = $('.battle-result', battle.el);
     box.classList.add('show', won ? 'win' : 'lose');
     $('.big', box).textContent = won ? T.t('victory') : T.t('defeat');
@@ -339,6 +584,8 @@
     renderMyTeam();
     renderRivals();
     updateArena();
+    renderFriendsList();
+    renderDefenseLog();
     CC.ui.updateHud();
   }
 
@@ -459,6 +706,24 @@
       rivals = AR.rivalSlate(g, rivalSalt);
       renderRivals();
       CC.audio.play('buy');
+    };
+
+    /* Online event wiring */
+    $('#btn-online-attack').onclick = onlineAttack;
+    $('#btn-add-friend').onclick = openAddFriendModal;
+    $('#fc-copy').onclick = () => {
+      const code = g.online.friendCode;
+      if (!code) return;
+      try {
+        navigator.clipboard.writeText(code);
+        CC.ui.toast(T.t('copied') + ' (' + code + ')', 'good');
+      } catch (e) {
+        CC.ui.toast(code, 'good');
+      }
+    };
+    $('#btn-clear-log').onclick = () => {
+      if (CC.online) CC.online.clearMyAttacks();
+      renderDefenseLog();
     };
   }
 

@@ -349,6 +349,7 @@ textarea.savebox{
 }
 @media (min-width:640px){
   #app{max-width:520px;margin:0 auto;box-shadow:0 0 60px rgba(0,0,0,.6)}
+  .battle-screen{max-width:520px;left:50%!important;right:auto!important;transform:translateX(-50%);box-shadow:0 0 60px rgba(0,0,0,.8)}
 }
 
 /* ============================================================
@@ -390,9 +391,13 @@ textarea.savebox{
 .arena-actions .btn{flex:1;padding:10px 6px;font-size:.78rem}
 .mini-btn{
   width:32px;height:32px;border-radius:10px;background:var(--panel);
-  border:1px solid var(--line);font-size:.9rem
+  border:1px solid var(--line);font-size:.9rem;display:inline-flex;
+  align-items:center;justify-content:center;color:var(--txt);
+  cursor:pointer;transition:all .15s ease;flex:0 0 auto;
 }
-.mini-btn:active{transform:rotate(90deg)}
+.mini-btn:hover{background:var(--panel2);border-color:rgba(255,255,255,.2)}
+.mini-btn:active{transform:scale(.9)}
+#arena-reroll:active{transform:rotate(90deg) scale(.9)}
 
 .rival{display:flex;align-items:center;gap:9px;padding:9px;border-radius:var(--r);
   background:linear-gradient(180deg,var(--panel2),var(--panel));border:1px solid var(--line)}
@@ -412,14 +417,15 @@ textarea.savebox{
 
 /* battle screen */
 .battle-screen{position:fixed;inset:0;z-index:180;background:#07060f;display:flex;flex-direction:column}
-.battle-top{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 12px;padding-top:calc(10px + var(--safe-t))}
+.battle-top{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 12px;padding-top:calc(10px + var(--safe-t));flex:0 0 auto;position:relative;z-index:10;background:#07060f}
 .battle-top .side{flex:1;min-width:0}
 .battle-top .side.b{text-align:end}
 .battle-top .nm{font-size:.82rem;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.trophy-tag{display:inline-flex;align-items:center;gap:2px;background:rgba(255,194,60,.14);border:1px solid rgba(255,194,60,.35);color:var(--gold);padding:1px 6px;border-radius:6px;font-size:.74rem;font-weight:800}
 .battle-top .pw{font-size:.66rem;color:var(--muted)}
 .battle-top .vs{font-size:.9rem;font-weight:900;color:var(--red)}
-#battle-canvas{flex:1;width:100%;display:block}
-.battle-bottom{padding:10px 12px calc(14px + var(--safe-b));display:flex;gap:8px}
+#battle-canvas{flex:1;min-height:0;width:100%;display:block}
+.battle-bottom{padding:12px;padding-bottom:calc(14px + var(--safe-b));display:flex;gap:8px;flex:0 0 auto;position:relative;z-index:10;background:#07060f}
 .battle-bottom .btn{flex:1}
 .battle-result{
   position:absolute;top:38%;left:50%;transform:translate(-50%,-50%) scale(.6);
@@ -460,3 +466,59 @@ textarea.savebox{
   color:var(--txt);font-family:inherit;font-weight:700;font-size:.82rem;padding:7px 10px;text-align:center
 }
 .nameinput:focus{outline:2px solid var(--violet);outline-offset:1px}
+
+/* ---------- Online Multiplayer ---------- */
+.online-status{display:flex;align-items:center;gap:6px;font-size:.72rem;color:var(--muted);margin-bottom:8px}
+.status-dot{width:8px;height:8px;border-radius:50%;display:inline-block;flex:0 0 auto}
+.status-dot.online{background:var(--green);box-shadow:0 0 6px var(--green)}
+.status-dot.offline{background:var(--muted)}
+
+.online-section{margin-bottom:10px}
+.online-attack-btn{
+  width:100%;padding:12px;border-radius:var(--r);font-size:.92rem;font-weight:800;
+  background:linear-gradient(135deg,#7c5cff,#e03131);color:#fff;
+  box-shadow:0 4px 15px rgba(124,92,255,.35);transition:all .2s ease
+}
+.online-attack-btn:active{transform:scale(.98)}
+.online-attack-btn.searching{animation:pulse 1s infinite alternate}
+@keyframes pulse{from{opacity:.7}to{opacity:1}}
+
+.friend-code-box{
+  display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:12px;
+  background:var(--panel);border:1px solid var(--line);margin-bottom:10px
+}
+.fc-label{font-size:.72rem;color:var(--muted);flex:0 0 auto}
+.fc-code{font-size:1.05rem;font-weight:900;letter-spacing:3px;color:var(--gold);flex:1;text-align:center;font-family:monospace}
+
+.btn.mini{padding:4px 9px;font-size:.75rem;border-radius:8px;min-width:0}
+
+.friend-card{
+  display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:var(--r);
+  background:linear-gradient(180deg,var(--panel2),var(--panel));border:1px solid var(--line);
+  margin-bottom:6px
+}
+.friend-info{flex:1;min-width:0}
+.friend-name{display:flex;align-items:center;gap:6px;font-size:.85rem;font-weight:800}
+.friend-name span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.friend-stats{font-size:.7rem;color:var(--muted);margin-top:2px}
+.friend-actions{display:flex;gap:6px;flex:0 0 auto}
+.friend-actions .fight{
+  padding:7px 11px;border-radius:10px;font-size:.75rem;font-weight:800;
+  background:linear-gradient(180deg,#ff8787,#e03131);color:#fff
+}
+
+.defense-entry{
+  display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:12px;
+  background:var(--panel);border:1px solid var(--line);margin-bottom:6px;font-size:.8rem
+}
+.defense-entry.breached{border-inline-start:3px solid var(--red)}
+.defense-entry.defended{border-inline-start:3px solid var(--green)}
+.de-icon{font-size:1.1rem;flex:0 0 auto}
+.de-info{flex:1;min-width:0}
+.de-name{font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.de-result{font-size:.7rem;color:var(--muted)}
+.de-trophy{font-weight:800;color:var(--gold)}
+.de-time{font-size:.65rem;color:var(--muted);flex:0 0 auto}
+
+.empty-msg{padding:14px;text-align:center;font-size:.78rem;color:var(--muted);background:var(--panel);border-radius:12px;border:1px dashed var(--line)}
+

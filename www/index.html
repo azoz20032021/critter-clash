@@ -106,12 +106,36 @@
         <div class="arena-stat"><em id="lbl-trophies"></em><b id="arena-trophies">0</b></div>
         <div class="arena-stat"><em id="lbl-pr"></em><b id="arena-pr">0</b></div>
       </div>
+      <div class="online-status" id="online-status"><i class="status-dot offline"></i><span></span></div>
       <div class="teamstrip" id="arena-myteam"></div>
+
+      <!-- Online Attack -->
+      <div class="online-section">
+        <button class="btn online-attack-btn" id="btn-online-attack">🎯</button>
+      </div>
+
+      <!-- Friend Code -->
+      <div class="friend-code-box" id="friend-code-box">
+        <div class="fc-label" id="fc-label"></div>
+        <div class="fc-code" id="fc-code">------</div>
+        <button class="mini-btn" id="fc-copy" title="Copy">📋</button>
+      </div>
+
       <div class="arena-actions">
         <button class="btn ghost" id="arena-copy"></button>
         <button class="btn ghost" id="arena-friend"></button>
       </div>
-      <div class="view-head"><h2 id="rivals-title"></h2><button class="mini-btn" id="arena-reroll">🔄</button></div>
+
+      <!-- Friends List -->
+      <div class="view-head"><h2 id="friends-title"></h2><button class="mini-btn" id="btn-add-friend" title="Add">➕</button></div>
+      <div class="list" id="friends-list"></div>
+
+      <!-- Defense Log -->
+      <div class="view-head" style="margin-top:12px"><h2 id="defense-title"></h2><button class="mini-btn" id="btn-clear-log" title="Clear">🗑️</button></div>
+      <div class="list" id="defense-log"></div>
+
+      <!-- Local Rivals -->
+      <div class="view-head" style="margin-top:12px"><h2 id="rivals-title"></h2><button class="mini-btn" id="arena-reroll">🔄</button></div>
       <div class="list" id="rival-list"></div>
       <div class="row" id="arena-record"></div>
     </section>
@@ -137,6 +161,11 @@
 <div id="modals"></div>
 <div id="toasts"></div>
 
+<!-- Firebase SDK (compat) -->
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+
 <script src="js/bignum.js"></script>
 <script src="js/util.js"></script>
 <script src="js/i18n.js"></script>
@@ -147,6 +176,7 @@
 <script src="js/arena.js"></script>
 <script src="js/audio.js"></script>
 <script src="js/ads.js"></script>
+<script src="js/online.js"></script>
 <script src="js/game.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/views.js"></script>

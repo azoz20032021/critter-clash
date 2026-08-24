@@ -16,6 +16,7 @@
     CC.audio.setSfx(g.sound);
     CC.audio.setMusic(g.music);
     CC.ads.init();
+    if (CC.online) await CC.online.init(g);
 
     const canvas = document.getElementById('scene');
     CC.game.attach(canvas, g);

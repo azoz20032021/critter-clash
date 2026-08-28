@@ -31,6 +31,9 @@ jobs:
       - name: Arena & mutation tests
         run: node tools/test-arena.js
 
+      - name: Prestige ledger, skills, fusion & save migration
+        run: node tools/test-ui-new.js
+
       - name: Build single-file bundle
         run: node tools/bundle.js
 

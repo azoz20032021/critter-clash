@@ -24,13 +24,23 @@
      --------------------------------------------------------- */
   function makeMonster(stage, index) {
     const boss = DATA.isBossStage(stage);
+    const elite = !boss && DATA.isEliteIndex(index);
     const spec = SP.monsterSpec(stage, index, boss);
+    if (elite) {
+      /* an elite is the same creature wearing better armour — bigger, brighter
+         and worth the extra few seconds it costs to chew through */
+      spec.scale *= 1.22;
+      spec.aura = spec.pal[0];
+      spec.eyeColor = '#fff4d6';
+      spec.pupil = '#ff9f1c';
+    }
     let hp = DATA.monsterHP(stage);
     if (boss) hp = hp.mul(DATA.bossHPMult(stage));
+    else if (elite) hp = hp.mul(DATA.BAL.eliteHPMult);
     const pool = boss ? DATA.BOSS_NAMES : DATA.MONSTER_NAMES;
     const nm = pool[(stage * 7 + index * 3) % pool.length];
     return {
-      spec, hp, maxHp: hp, boss, name: nm, index,
+      spec, hp, maxHp: hp, boss, elite, name: nm, index,
       hit: 0, dying: 0, dead: false, born: game.scene.t,
       look: { x: 0, y: 0 }
     };
@@ -77,6 +87,13 @@
 
   const MAX_KILLS_PER_TICK = 60;
 
+  /** Boss Hunter only pays out on the monsters it was bought for. */
+  function heroDmg(base) {
+    const m = game.monster, d = game.d;
+    if (!m || !m.boss || !d || !(d.bossDmg > 1)) return D(base);
+    return D(base).mul(d.bossDmg);
+  }
+
   function damage(amount, opts) {
     const m = game.monster;
     const amt = D(amount);
@@ -105,7 +122,7 @@
     const g = game.g, d = game.d;
     g.stats.taps++;
     if (!game.monster || game.monster.dead) return;
-    let dmg = d.tap;
+    let dmg = heroDmg(d.tap);
     const crit = Math.random() < d.critChance;
     if (crit) { dmg = dmg.mul(d.critMult); g.stats.crits++; }
     let hits = 1;
@@ -125,11 +142,13 @@
     m.dead = true; m.dying = 0.001;
 
     let gold = DATA.monsterGold(g.stage).mul(d.goldMult);
-    if (m.boss) gold = gold.mul(DATA.bossGoldMult(g.stage));
+    if (m.boss) gold = gold.mul(DATA.bossGoldMult(g.stage) * d.bossGoldMult);
+    else if (m.elite) gold = gold.mul(DATA.BAL.eliteGoldMult);
     grantGold(gold);
     g.stats.kills++;
+    if (m.elite) g.stats.elites = (g.stats.elites || 0) + 1;
 
-    coinBurst(m.boss ? 16 : 6);
+    coinBurst(m.boss ? 16 : m.elite ? 10 : 6);
     poof(m);
     CC.audio.play(m.boss ? 'bossKill' : 'kill');
     if (g.haptics && m.boss) CC.audio.vibrate(40);
@@ -138,11 +157,11 @@
     retire(m);
     if (m.boss) {
       g.stats.bosses++;
-      const chance = 0.18 + d.gemLuck;
-      if (Math.random() < chance) grantGems(U.randInt(1, 3) * d.gemMult);
+      if (Math.random() < 0.18 + d.gemLuck) grantGems(U.randInt(1, 3) * d.gemMult);
       g.bossActive = false;
       advance();
     } else {
+      if (m.elite && Math.random() < 0.05 + d.gemLuck * 0.5) grantGems(d.gemMult);
       g.killsInStage++;
       if (g.killsInStage >= DATA.BAL.monstersPerStage) advance();
       else spawn();                     // instant respawn keeps tapping fluid
@@ -217,22 +236,46 @@
     if (!def || !skillUnlocked(id)) return false;
     const st = skillState(id);
     if (st.cdEnd > t) return false;
-    st.cdEnd = t + def.cd * 1000 * d.cdMult;
-    if (def.dur > 0) st.activeEnd = t + def.dur * 1000;
+    const lv = S.skillLevel(g, id);
+    const mult = DATA.skillMult(def, lv);
+    const dur = DATA.skillDur(def, lv);
+    st.cdEnd = t + DATA.skillCd(def, lv) * 1000 * d.cdMult;
+    if (def.dur > 0) st.activeEnd = t + dur * 1000;
 
     if (id === 'bolt') {
-      const dmg = d.dps.mul(def.mult);
+      const dmg = heroDmg(d.dps).mul(mult);
       damage(dmg, { crit: true, showNumber: true, x: game.scene.w / 2, y: game.scene.h * (MON_Y - 0.02) });
       lightning();
     } else if (id === 'warp') {
       const gps = goldPerSecond();
-      const amount = gps.mul(def.mult);
+      const amount = gps.mul(mult);
       grantGold(amount);
       coinBurst(20);
       pushNumber(amount, false, game.scene.w / 2, game.scene.h * (MON_Y - 0.14), '#ffd43b', '+');
     }
     CC.audio.play('skill');
     emit('skill', id);
+    return true;
+  }
+
+  function buySkillUpgrade(id, mode) {
+    const g = game.g, def = S.skillDef(id);
+    if (!def || !skillUnlocked(id)) return false;
+    const lv = S.skillLevel(g, id);
+    if (lv >= def.maxLv) return false;
+    const room = def.maxLv - lv;
+    const n = (mode === 'max')
+      ? D.maxAffordable(def.upCost, def.upMult, lv, g.gold, room)
+      : Math.min(mode || 1, room);
+    if (n <= 0) { CC.audio.play('error'); return false; }
+    const cost = D.bulkCost(def.upCost, def.upMult, lv, n);
+    if (cost.gt(g.gold)) { CC.audio.play('error'); return false; }
+    g.gold = g.gold.sub(cost);
+    if (!g.skillLv) g.skillLv = {};
+    g.skillLv[id] = lv + n;
+    CC.audio.play('buy');
+    checkAchievements();
+    emit('buy', { kind: 'skill', id, n });
     return true;
   }
 
@@ -304,6 +347,58 @@
     return true;
   }
 
+  /* ---------------------------------------------------------
+     Fusion — merge one critter into another, permanently
+     --------------------------------------------------------- */
+
+  /** Critters that could legally be fed to `targetId` right now. */
+  function fusionCandidates(targetId) {
+    const g = game.g;
+    const stars = DATA.fusionStars(g, targetId);
+    const need = DATA.fusionNeedLevel(stars);
+    const out = [];
+    for (const id in g.critters) {
+      if (id === targetId) continue;
+      const lv = g.critters[id] | 0;
+      if (lv < need) continue;
+      const def = DATA.critterById(id);
+      if (!def) continue;
+      out.push({ def, level: lv });
+    }
+    out.sort((a, b) => a.def.tier - b.def.tier);
+    return out;
+  }
+
+  /**
+   * Feed `sacrificeId` to `targetId`.
+   * The fodder is spent down to zero and the survivor keeps a star forever —
+   * fusion stars are the only critter power that outlives a prestige.
+   */
+  function fuseCritter(targetId, sacrificeId) {
+    const g = game.g;
+    if (!targetId || !sacrificeId || targetId === sacrificeId) return false;
+    const target = DATA.critterById(targetId), fodder = DATA.critterById(sacrificeId);
+    if (!target || !fodder) return false;
+    if ((g.critters[targetId] | 0) <= 0) return false;
+
+    const stars = DATA.fusionStars(g, targetId);
+    if (stars >= DATA.FUSION.maxStars) return false;
+    if ((g.critters[sacrificeId] | 0) < DATA.fusionNeedLevel(stars)) return false;
+
+    const cost = DATA.fusionCost(stars);
+    if (g.gems < cost) { CC.audio.play('error'); return false; }
+
+    g.gems -= cost;
+    g.critters[sacrificeId] = 0;
+    if (!g.fusions) g.fusions = {};
+    g.fusions[targetId] = stars + 1;
+    CC.audio.play('prestige');
+    checkAchievements();
+    S.save(g, true);
+    emit('fuse', { targetId, sacrificeId, stars: stars + 1 });
+    return true;
+  }
+
   function relicCost(id) {
     const g = game.g;
     const def = DATA.RELICS.find(r => r.id === id);
@@ -316,19 +411,25 @@
      Prestige
      --------------------------------------------------------- */
   function prestigeGain() {
-    const g = game.g, d = game.d;
-    return Math.floor(DATA.soulsFor(g.bestStage) * d.soulMultOnPrestige);
+    const g = game.g;
+    const d = game.d || S.derive(g, Date.now());
+    return Math.floor(DATA.soulsGain(g.bestStage, g.soulStage) * d.soulMultOnPrestige);
   }
 
   function doPrestige() {
     const g = game.g;
-    if (g.bestStage < 10) return false;
+    if (g.bestStage < DATA.BAL.minPrestigeStage) return false;
     const gain = prestigeGain();
+    if (gain <= 0) return false;               // nothing new to cash in
     g.souls += gain;
     g.prestiges++;
+    /* mark this depth as paid, so tapping the button again pays nothing
+       until you actually push past it */
+    g.soulStage = Math.max(g.soulStage || 0, g.bestStage);
     g.gold = D(0);
     g.critters = {};
     g.upgrades = {};
+    g.skillLv = {};
     g.skills = {};
     g.boosts = {};
     g.killsInStage = 0;
@@ -500,7 +601,7 @@
       game._autoAcc = (game._autoAcc || 0) + d.autoTaps * dt;
       while (game._autoAcc >= 1) {
         game._autoAcc -= 1;
-        let dmg = d.tap;
+        let dmg = heroDmg(d.tap);
         const crit = Math.random() < d.critChance;
         if (crit) { dmg = dmg.mul(d.critMult); g.stats.crits++; }
         damage(dmg, { tap: true, crit, showNumber: true, x: game.scene.w / 2 + U.rand(-60, 60), y: game.scene.h * (MON_Y - 0.02) });
@@ -509,7 +610,7 @@
 
     /* squad DPS */
     if (!d.dps.isZero() && game.monster && !game.monster.dead) {
-      damage(d.dps.mul(dt), {});
+      damage(heroDmg(d.dps).mul(dt), {});
       game._dpsAcc = (game._dpsAcc || 0) + dt;
       if (game._dpsAcc > 0.55) {
         game._dpsAcc = 0;
@@ -522,7 +623,7 @@
 
     /* boss timer */
     if (g.bossActive && game.monster && !game.monster.dead) {
-      g.bossTimer -= dt;
+      if (!d.frozen) g.bossTimer -= dt;        // Deep Freeze holds the clock
       if (g.bossTimer <= 0) bossTimeout();
     }
 
@@ -846,7 +947,9 @@
 
   CC.game = Object.assign(game, {
     attach, resize, render, tick, spawn, tap, damage, advance, gotoStage, startBoss,
-    useSkill, skillUnlocked, skillState, buyCritter, buyUpgrade, buyRelic, relicCost,
+    useSkill, skillUnlocked, skillState, buySkillUpgrade,
+    fuseCritter, fusionCandidates,
+    buyCritter, buyUpgrade, buyRelic, relicCost,
     prestigeGain, doPrestige, checkAchievements, addBoost, openChest, offlineReport,
     goldPerSecond, grantGold, grantGems, pushNumber, coinBurst, makeMonster
   });

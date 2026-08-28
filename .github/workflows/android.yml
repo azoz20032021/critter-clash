@@ -70,7 +70,20 @@ jobs:
 
       - name: Read the version from package.json
         id: ver
-        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "versionCode=$VERSION_CODE" >> "$GITHUB_OUTPUT"
+        env:
+          # Google Play refuses any upload whose versionCode it has already
+          # seen, so it MUST grow on every build. The run number does that for
+          # free and never repeats, even if package.json is left alone.
+          VERSION_CODE: ${{ github.run_number }}
+
+      - name: Stamp the version into the Android project
+        env:
+          VERSION_CODE: ${{ github.run_number }}
+        run: node tools/stamp-version.js
 
       # ---------------------------------------------------------------
       # Debug APK — install this straight onto your phone to play-test
@@ -100,6 +113,13 @@ jobs:
             echo "ready=false" >> "$GITHUB_OUTPUT"
             echo "::notice::No signing secrets set — skipping the release bundle. Add KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_ALIAS and KEY_PASSWORD to build an uploadable .aab."
           fi
+
+      - name: Release guard rails (AdMob ids, assets, app id)
+        if: steps.signing.outputs.ready == 'true'
+        env:
+          # set the repository variable ALLOW_TEST_ADS to 1 to publish before monetising
+          ALLOW_TEST_ADS: ${{ vars.ALLOW_TEST_ADS }}
+        run: node tools/release-check.js
 
       - name: Build release bundle
         if: steps.signing.outputs.ready == 'true'

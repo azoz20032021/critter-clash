@@ -1,0 +1,80 @@
+{
+  "//": [
+    "Realtime Database rules for Critter Clash.",
+    "",
+    "Paste these into Firebase Console -> Realtime Database -> Rules -> Publish.",
+    "",
+    "Why they matter:",
+    "  * A brand-new database is created in TEST MODE, which lets ANY person on",
+    "    the internet read and delete every player's data. Test mode also expires",
+    "    after 30 days and then breaks the arena entirely. Do not ship on it.",
+    "  * The .indexOn entries remove the 'Using an unspecified index' warnings and",
+    "    stop the client downloading whole tables just to filter them.",
+    "",
+    "Model: a player may write only their own record, but any signed-in player may",
+    "read profiles (needed for matchmaking) and may append to another player's",
+    "attack log and duel inbox (needed for async attacks and live duels)."
+  ],
+
+  "rules": {
+    "players": {
+      ".read": "auth != null",
+      ".indexOn": ["friendCode", "trophies", "lastOnline"],
+      "$uid": {
+        ".write": "auth != null && auth.uid === $uid",
+        "name": { ".validate": "newData.isString() && newData.val().length <= 18" },
+        "friendCode": { ".validate": "newData.isString() && newData.val().length <= 12" },
+        "team": { ".validate": "newData.isString() && newData.val().length <= 2048" },
+
+        "//friends": "friending is mutual, so a friend writes into your record too",
+        "friends": {
+          "$friendUid": {
+            ".write": "auth != null",
+            ".validate": "newData.isBoolean() || !newData.exists()"
+          }
+        },
+
+        "//trophies": "an attacker settles the defender's trophy loss",
+        "trophies": {
+          ".write": "auth != null",
+          ".validate": "newData.isNumber() && newData.val() >= 0"
+        }
+      }
+    },
+
+    "saves": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid"
+      }
+    },
+
+    "attacks": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".indexOn": ["timestamp"],
+        "$entry": {
+          ".write": "auth != null",
+          ".validate": "newData.hasChildren(['timestamp'])"
+        }
+      }
+    },
+
+    "duels": {
+      "$uid": {
+        "//": "the inbox owner reads the whole list; a challenger may follow only the one duel they opened, which is how they learn it was accepted",
+        ".read": "auth != null && auth.uid === $uid",
+        ".indexOn": ["timestamp", "status"],
+        "$duelId": {
+          ".read": "auth != null && (auth.uid === $uid || data.child('challengerUid').val() === auth.uid)",
+          ".write": "auth != null && (auth.uid === $uid || !data.exists() || data.child('challengerUid').val() === auth.uid)"
+        }
+      }
+    },
+
+    "$other": {
+      ".read": false,
+      ".write": false
+    }
+  }
+}

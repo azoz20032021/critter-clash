@@ -49,6 +49,7 @@
 
   function renderMyTeam() {
     const host = $('#arena-myteam');
+    if (!g || !host) return;
     const team = AR.myTeam(g);
     host.innerHTML = '';
     for (let i = 0; i < AR.TEAM_SIZE; i++) {
@@ -70,6 +71,8 @@
 
   function renderRivals() {
     const host = $('#rival-list');
+    if (!g || !host) return;
+    if (!rivals) rivals = AR.rivalSlate(g, rivalSalt);
     host.innerHTML = '';
     const myPR = AR.powerRating(AR.myTeam(g));
     const labels = ['rival_easy', 'rival_even', 'rival_hard'];
@@ -112,7 +115,7 @@
      ========================================================= */
   function updateOnlineStatus() {
     const el = $('#online-status');
-    if (!el) return;
+    if (!g || !el) return;
     const dot = $('i', el);
     const txt = $('span', el);
     if (CC.online && CC.online.isReady()) {
@@ -128,6 +131,7 @@
      Friend code display
      ========================================================= */
   function renderFriendCode() {
+    if (!g) return;
     if (!g.online.friendCode) {
       const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
       let code = '';
@@ -212,9 +216,9 @@
     if (!mine.length) { CC.ui.toast(T.t('need_team'), 'bad'); return; }
 
     if (isFriendFight) {
-      mine = AR.capTeamLevel(mine, 110);
+      mine = AR.capTeamLevel(mine, AR.FRIEND_LEVEL_CAP);
       if (opp && opp.team) {
-        opp.team = AR.capTeamLevel(opp.team, 110);
+        opp.team = AR.capTeamLevel(opp.team, AR.FRIEND_LEVEL_CAP);
       }
     }
 
@@ -331,7 +335,7 @@
 
   async function renderFriendsList() {
     const host = $('#friends-list');
-    if (!host) return;
+    if (!g || !host) return;
 
     let friends = [];
     if (CC.online) {
@@ -393,8 +397,8 @@
         const opp = await CC.online.attackFriend(f.uid);
         if (!opp) { CC.ui.toast(T.t('network_error'), 'bad'); return; }
         opp.isFriend = true;
-        const mine = AR.capTeamLevel(AR.myTeam(g), 110);
-        opp.team = AR.capTeamLevel(opp.team, 110);
+        const mine = AR.capTeamLevel(AR.myTeam(g), AR.FRIEND_LEVEL_CAP);
+        opp.team = AR.capTeamLevel(opp.team, AR.FRIEND_LEVEL_CAP);
         const myPR = AR.powerRating(mine);
         const oppPR = AR.powerRating(opp.team);
         openOnlineBattle(opp, AR.battleSeed(myPR, oppPR, Date.now() & 0xffff), false);
@@ -451,7 +455,7 @@
           const opp = {
             uid: challenge.challengerUid,
             name: decoded.name || challenge.challengerName || 'Player',
-            team: AR.capTeamLevel(decoded.team, 110),
+            team: AR.capTeamLevel(decoded.team, AR.FRIEND_LEVEL_CAP),
             stage: decoded.stage || 1,
             trophies: 0,
             isFriend: true
@@ -511,7 +515,7 @@
         const opp = {
           uid: friendUid,
           name: statusRes.oppName || friendName,
-          team: AR.capTeamLevel(statusRes.oppTeam, 110),
+          team: AR.capTeamLevel(statusRes.oppTeam, AR.FRIEND_LEVEL_CAP),
           stage: 1,
           trophies: 0,
           isFriend: true
@@ -571,7 +575,7 @@
      ========================================================= */
   async function renderDefenseLog() {
     const host = $('#defense-log');
-    if (!host) return;
+    if (!g || !host) return;
 
     const log = (CC.online && CC.online.isReady())
       ? await CC.online.getAttackLog()
@@ -945,6 +949,92 @@
   }
 
   /* =========================================================
+     Fusion Lab — merge one critter into another, forever
+     ========================================================= */
+  function critterIconURL(def) {
+    const mut = g.mutations[def.id];
+    const key = 'f_' + def.id + '_' + (mut ? mut.seed : 'base');
+    if (!iconCache[key]) {
+      try { iconCache[key] = SP.iconDataURL(MUT.spriteSpec(def, mut), 96); }
+      catch (e) { iconCache[key] = ''; }
+    }
+    return iconCache[key];
+  }
+
+  function openFusion(def) {
+    const stars = DATA.fusionStars(g, def.id);
+    const maxed = stars >= DATA.FUSION.maxStars;
+    const need = DATA.fusionNeedLevel(stars);
+    const price = DATA.fusionCost(stars);
+    const options = CC.game.fusionCandidates(def.id);
+    let picked = options.length ? options[0].def.id : null;
+
+    /* ★ and ☆ render as the same glyph in the emoji fallback font, so spell the
+       difference out with colour instead of relying on the character */
+    const starLine =
+      '<b style="color:var(--gold)">' + '★'.repeat(stars) + '</b>' +
+      '<b style="color:#463d70">' + '★'.repeat(DATA.FUSION.maxStars - stars) + '</b>';
+
+    const m = CC.ui.modal(
+      '<div class="big-ico">⭐</div><h3>' + T.t('fusion_title') + '</h3>' +
+      '<p>' + T.t('fusion_intro').replace('{v}', DATA.fusionStarPct()) + '</p>' +
+      '<div class="fuse-head">' +
+        '<img alt="" src="' + critterIconURL(def) + '">' +
+        '<div><div class="fr-n">' + T.tl(def.name) + '</div>' +
+        '<div class="fuse-stars">' + starLine + '</div>' +
+        '<div class="fr-l">' + T.t('fusion_stars') + ' ' + stars + '/' + DATA.FUSION.maxStars +
+          ' · ×' + DATA.fusionMult(stars).toFixed(2) + '</div></div>' +
+      '</div>' +
+      (maxed
+        ? '<p class="mut-hint">' + T.t('fusion_max') + '</p>'
+        : options.length
+          ? '<p class="mut-hint">' + T.t('fusion_pick') + '</p><div class="fuse-list"></div>' +
+            '<p class="mut-hint">' + T.t('fusion_warn') + '</p>'
+          : '<p class="mut-hint">' + T.t('fusion_none').replace('{v}', need) + '</p>') +
+      '<div class="btns">' +
+        '<button class="btn ghost" data-close>' + T.t('close') + '</button>' +
+        (maxed || !options.length ? ''
+          : '<button class="btn gold" data-fuse>💎 ' + price + ' · ' + T.t('fuse_btn') + '</button>') +
+      '</div>');
+
+    $('[data-close]', m).onclick = () => CC.ui.closeModal(m);
+
+    const list = $('.fuse-list', m);
+    if (list) {
+      options.forEach(o => {
+        const row = document.createElement('button');
+        row.className = 'fuse-row' + (o.def.id === picked ? ' sel' : '');
+        row.dataset.id = o.def.id;
+        row.innerHTML =
+          '<img alt="" src="' + critterIconURL(o.def) + '">' +
+          '<div class="fr-i"><div class="fr-n">' + T.tl(o.def.name) + '</div>' +
+          '<div class="fr-l">' + T.t('level_short') + ' ' + o.level +
+          ' · ' + T.t('fusion_need').replace('{v}', need) + '</div></div>';
+        row.onclick = () => {
+          picked = o.def.id;
+          $$('.fuse-row', m).forEach(r => r.classList.toggle('sel', r.dataset.id === picked));
+        };
+        list.appendChild(row);
+      });
+    }
+
+    const fuseBtn = $('[data-fuse]', m);
+    if (fuseBtn) {
+      fuseBtn.onclick = () => {
+        if (g.gems < price) { CC.ui.toast(T.t('need_gems'), 'bad'); CC.audio.play('error'); return; }
+        if (!picked) return;
+        if (!CC.game.fuseCritter(def.id, picked)) { CC.ui.toast(T.t('not_enough'), 'bad'); return; }
+        CC.ui.closeModal(m);
+        CC.ui.toast(T.t('fusion_done'), 'good');
+        CC.ui.flashRes('gems');
+        CC.ui.refreshLists(true);
+        CC.ui.updateHud();
+        renderMyTeam();
+      };
+    }
+  }
+
+  /* =========================================================
      Wiring
      ========================================================= */
   function init(state) {
@@ -977,5 +1067,6 @@
     };
   }
 
-  CC.views = { init, buildArena, updateArena, renderMyTeam, renderRivals, openMutation, openBattle, closeBattle, handleIncomingDuel };
+  CC.views = { init, buildArena, updateArena, renderMyTeam, renderRivals, openMutation, openFusion, openBattle, closeBattle, handleIncomingDuel,
+    renderFriendCode, renderFriendsList, renderDefenseLog, updateOnlineStatus };
 })(window);

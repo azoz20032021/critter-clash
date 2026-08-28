@@ -58,9 +58,13 @@
     /* --- prestige --- */
     prestige_title: { ar: 'البعث', en: 'Prestige' },
     prestige_desc: {
-      ar: 'ابدأ من جديد من المرحلة ١ واحتفظ بالأرواح والآثار. كل روح تمنحك +١٠٪ ضرراً دائماً.',
-      en: 'Restart from stage 1 but keep your Souls and Relics. Each Soul grants +10% permanent damage.'
+      ar: 'ابدأ من جديد واحتفظ بالأرواح والآثار والطفرات ونجوم الدمج. كل روح تضاعف ضررك +٦٪، والأرواح تُدفع فقط عن المراحل الجديدة التي تتجاوزها.',
+      en: 'Start over but keep Souls, Relics, mutations and fusion stars. Each Soul multiplies all damage by +6%, and Souls are only paid for stages deeper than your last prestige.'
     },
+    souls_pending: { ar: 'أرواح جاهزة', en: 'Souls ready' },
+    soul_claimed_stage: { ar: 'آخر مرحلة مدفوعة', en: 'Last paid stage' },
+    prestige_need_deeper: { ar: 'تقدّم إلى المرحلة {s} لتكسب أرواحاً جديدة', en: 'Reach stage {s} to earn more Souls' },
+    prestige_no_gain: { ar: 'لا أرواح جديدة — تعمّق أكثر أولاً', en: 'No new Souls — go deeper first' },
     souls_on_reset: { ar: 'أرواح عند البعث', en: 'Souls on reset' },
     do_prestige: { ar: 'ابعث الآن', en: 'Prestige now' },
     prestige_need: { ar: 'تحتاج المرحلة ١٠ على الأقل', en: 'Reach stage 10 first' },
@@ -192,6 +196,15 @@
     share_code: { ar: 'شارك كودك مع أصدقائك!', en: 'Share your code with friends!' },
     real_player: { ar: 'لاعب حقيقي', en: 'Real player' },
     network_error: { ar: 'خطأ في الاتصال', en: 'Network error' },
+    live_duel: { ar: '⚔️ مبارزة حية', en: '⚔️ Live duel' },
+    send_challenge: { ar: 'إرسال التحدي', en: 'Sending challenge' },
+    waiting_friend: { ar: 'بانتظار…', en: 'Waiting for…' },
+    challenge_received: { ar: 'يتحداك في مبارزة حية!', en: 'challenges you to a live duel!' },
+    accept_challenge: { ar: 'قبول', en: 'Accept' },
+    reject_challenge: { ar: 'رفض', en: 'Decline' },
+    challenge_timeout: { ar: 'لم يرد صديقك في الوقت المحدد', en: 'Your friend did not answer in time' },
+    challenge_rejected: { ar: 'رفض صديقك التحدي', en: 'Your friend declined the duel' },
+    just_now: { ar: 'الآن', en: 'now' },
 
     /* --- google sign-in --- */
     google_signin: { ar: '🔑 تسجيل الدخول بـ Google', en: '🔑 Sign in with Google' },
@@ -222,6 +235,34 @@
     element: { ar: 'العنصر', en: 'Element' },
     need_gems: { ar: 'جواهر غير كافية', en: 'Not enough gems' },
     mut_kept: { ar: 'تم تثبيت الطفرة!', en: 'Mutation locked in!' },
+
+    /* --- skills & fusion --- */
+    skill_upgrade: { ar: 'ترقية المهارة', en: 'Upgrade skill' },
+    skill_level: { ar: 'مستوى المهارة', en: 'Skill level' },
+    skill_maxed: { ar: 'المهارة مكتملة', en: 'Skill maxed' },
+    skill_power_now: { ar: 'الآن', en: 'Now' },
+    skill_power_next: { ar: 'بعد الترقية', en: 'Next' },
+    skills_hint: {
+      ar: 'المهارات تبدأ ضعيفة عمداً. رقِّها بالذهب لتصبح مرعبة — والترقيات تُصفَّر عند البعث.',
+      en: 'Skills start deliberately weak. Pay gold to make them terrifying — upgrades reset on prestige.'
+    },
+    fusion_title: { ar: 'دمج المخلوقات', en: 'Critter Fusion' },
+    fusion_intro: {
+      ar: 'ادمج مخلوقاً في آخر ليكسب نجمة دائمة: +{v}٪ ضرر لكل نجمة، ولا تُفقد أبداً عند البعث.',
+      en: 'Merge one critter into another for a permanent star: +{v}% damage each, never lost on prestige.'
+    },
+    fusion_stars: { ar: 'نجوم الدمج', en: 'Fusion stars' },
+    fusion_pick: { ar: 'اختر المخلوق الذي سيُضحّى به', en: 'Pick the critter to sacrifice' },
+    fusion_need: { ar: 'يحتاج مستوى {v}+', en: 'Needs level {v}+' },
+    fusion_none: { ar: 'لا يوجد مخلوق مؤهّل — ارفع مستوى مخلوق آخر إلى {v}', en: 'No eligible critter — level another one to {v}' },
+    fusion_done: { ar: 'تم الدمج! ⭐', en: 'Fused! ⭐' },
+    fusion_max: { ar: 'وصل للحد الأقصى من النجوم', en: 'Maximum stars reached' },
+    fusion_warn: { ar: 'سيُمسح مستوى المخلوق المُضحّى به بالكامل.', en: 'The sacrificed critter is reset to level 0.' },
+    fuse_btn: { ar: 'ادمج', en: 'Fuse' },
+    elite: { ar: 'نخبة', en: 'Elite' },
+    st_elites: { ar: 'وحوش النخبة', en: 'Elites slain' },
+    st_arena: { ar: 'سجل الحلبة', en: 'Arena record' },
+    st_fusions: { ar: 'نجوم الدمج', en: 'Fusion stars' },
 
     /* --- generic --- */
     close: { ar: 'إغلاق', en: 'Close' },

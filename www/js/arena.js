@@ -14,6 +14,7 @@
   const TEAM_SIZE = 5;
   const TICK = 0.1;                 // battle resolution step, seconds
   const MAX_TIME = 45;              // hard stop
+  const FRIEND_LEVEL_CAP = 110;     // friend duels are fought on level ground
 
   const BOT_FIRST = {
     ar: ['أبو', 'سيد', 'ملك', 'صائد', 'شبح', 'أمير', 'وحش', 'ظل', 'فارس', 'حارس'],
@@ -35,20 +36,22 @@
       if (lv <= 0) continue;
       const def = DATA.critterById(id);
       if (!def) continue;
-      owned.push(unitFrom(def, lv, g.mutations[id]));
+      owned.push(unitFrom(def, lv, g.mutations[id], DATA.fusionStars(g, id)));
     }
     owned.sort((a, b) => b.logPower - a.logPower);
     return owned.slice(0, TEAM_SIZE);
   }
 
-  function unitFrom(def, level, mut) {
+  function unitFrom(def, level, mut, stars) {
     const mult = CC.mut.dpsMult(mut);
-    const power = D(def.baseDps).mul(level * DATA.critterMilestoneMult(level) * mult);
+    const fuse = DATA.fusionMult(stars || 0);
+    const power = D(def.baseDps).mul(level * DATA.critterMilestoneMult(level) * mult * fuse);
     return {
       tier: def.tier,
       id: def.id,
       def,
       level,
+      stars: stars || 0,
       mut: mut || null,
       name: def.name,
       logPower: Math.max(0, power.log10())
@@ -70,7 +73,7 @@
       const cappedLv = Math.min(u.level, maxLevel);
       if (cappedLv === u.level) return u;
       const def = u.def || DATA.critterById(u.id) || DATA.getCritter(u.tier);
-      return unitFrom(def, cappedLv, u.mut);
+      return unitFrom(def, cappedLv, u.mut, u.stars);
     });
   }
 
@@ -90,7 +93,8 @@
         u.mut ? u.mut.element : (u.tier % 4),
         u.mut ? CC.mut.SHAPES.indexOf(u.mut.shape) : -1,
         u.mut ? u.mut.hue : 0,
-        u.mut ? u.mut.seed % 100000 : 0
+        u.mut ? u.mut.seed % 100000 : 0,
+        u.stars || 0
       ])
     };
     const json = JSON.stringify(payload);
@@ -116,7 +120,7 @@
         seed: (a[7] | 0) || 1,
         rolls: 1
       } : null;
-      return unitFrom(def, Math.max(1, a[1] | 0), mut);
+      return unitFrom(def, Math.max(1, a[1] | 0), mut, U.clamp(a[8] | 0, 0, DATA.FUSION.maxStars));
     });
     return { name: String(p.n || ('Player' + Math.floor(1000 + Math.random() * 9000))).slice(0, 18), stage: p.s | 0, team };
   }
@@ -162,7 +166,7 @@
           rolls: 1
         };
       }
-      const u = unitFrom(def, level, mut);
+      const u = unitFrom(def, level, mut, src.stars || 0);
       /* discount whatever the rolled mutation is worth in the arena, so
          "even" really means even and the difficulty dial stays truthful */
       u.logPower = Math.max(0, u.logPower + shift - Math.log10(CC.mut.arenaTotal(mut)));
@@ -171,12 +175,16 @@
     return { name: botName(seed), stage: g.bestStage, team, generated: true, difficulty: difficulty || 1 };
   }
 
-  /** Three rivals to choose from, refreshed on demand. */
+  /**
+   * Three rivals to choose from, refreshed on demand.
+   * "Even" sits a shade under parity on purpose — the ladder should feel
+   * winnable, and the Champion slot is where the real fight lives.
+   */
   function rivalSlate(g, salt) {
     const base = (salt || 0) + (g.arena.trophies | 0) * 31 + 17;
     return [
-      generateRival(g, base + 1, 0.88),
-      generateRival(g, base + 2, 1.0),
+      generateRival(g, base + 1, 0.7),
+      generateRival(g, base + 2, 0.94),
       generateRival(g, base + 3, 1.3)
     ];
   }
@@ -190,13 +198,12 @@
       const rarity = mut ? CC.mut.RARITIES[mut.rarity] : CC.mut.RARITIES[0];
       const trait = mut ? CC.mut.traitOf(mut) : null;
       const rel = Math.max(1e-4, Math.pow(10, Math.min(0, u.logPower - scale)));
-      const sideHpMult = (side === 0) ? 3 : 1;
-      const hp = 3000 * rel * rarity.arena * (trait && trait.hp ? trait.hp : 1) * sideHpMult;
+      const hp = 3000 * rel * rarity.arena * (trait && trait.hp ? trait.hp : 1);
       const atk = 420 * rel * rarity.arena * (trait && trait.atk ? trait.atk : 1);
       const spd = 1 * (trait && trait.spd ? trait.spd : 1);
       return {
         side, slot: i, unit: u,
-        name: u.name, element: mut ? mut.element : (u.tier % 4),
+        name: u.name, element: mut ? mut.element : ((u.tier | 0) % 4),
         trait: trait ? trait.id : null,
         maxHp: hp, hp, atk, spd,
         cd: 0.6 + (i * 0.11), poison: 0, poisonT: 0, revived: false, alive: true
@@ -384,7 +391,7 @@
   }
 
   CC.arena = {
-    TEAM_SIZE, myTeam, unitFrom, powerRating, capTeamLevel, encodeTeam, decodeTeam,
+    TEAM_SIZE, FRIEND_LEVEL_CAP, myTeam, unitFrom, powerRating, capTeamLevel, encodeTeam, decodeTeam,
     generateRival, rivalSlate, simulate, battleSeed, applyResult, rankOf, botName,
     tapDamageOf, offlineDrainPerSec
   };

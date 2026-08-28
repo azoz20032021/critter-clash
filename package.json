@@ -1,6 +1,6 @@
 {
   "name": "critter-clash",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Critter Clash Idle - an idle/clicker monster battler for Android & iOS",
   "private": true,
   "scripts": {
@@ -11,10 +11,13 @@
     "open:android": "npx cap open android",
     "open:ios": "npx cap open ios",
     "icons": "node tools/make-icons.js",
-    "test": "node tools/test-bignum.js && node tools/test-game.js && node tools/test-arena.js",
+    "test": "node tools/test-bignum.js && node tools/test-game.js && node tools/test-arena.js && node tools/test-ui-new.js",
     "test:endless": "node tools/test-endless.js",
     "bundle": "node tools/bundle.js",
-    "shots": "node tools/shots.js"
+    "shots": "node tools/shots.js",
+    "release:check": "node tools/release-check.js",
+    "android:stamp": "node tools/stamp-version.js",
+    "test:all": "npm test && npm run test:endless"
   },
   "dependencies": {
     "@capacitor/android": "^6.1.2",

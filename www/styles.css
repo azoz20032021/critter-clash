@@ -444,6 +444,30 @@ textarea.savebox{
 }
 .mut-btn:active{transform:scale(.94)}
 .mut-btn.has{box-shadow:0 0 10px rgba(177,151,252,.5)}
+.fuse-btn{
+  flex:0 0 auto;min-width:38px;height:38px;padding:0 6px;border-radius:11px;
+  font-size:.8rem;font-weight:800;
+  background:linear-gradient(180deg,#a8791f,#6b4a0f);border:1px solid rgba(255,212,59,.45)
+}
+.fuse-btn:active{transform:scale(.94)}
+.fuse-btn.has{box-shadow:0 0 10px rgba(255,212,59,.55);color:#ffe9a8}
+
+/* fusion lab */
+.fuse-list{display:flex;flex-direction:column;gap:6px;max-height:38vh;overflow-y:auto;margin:10px 0}
+.fuse-row{
+  display:flex;align-items:center;gap:9px;padding:7px 8px;border-radius:12px;
+  background:var(--panel);border:1px solid var(--line);text-align:start
+}
+.fuse-row img{width:38px;height:38px;flex:0 0 auto}
+.fuse-row .fr-i{flex:1;min-width:0}
+.fuse-row .fr-n{font-size:.82rem;font-weight:800}
+.fuse-row .fr-l{font-size:.68rem;color:var(--muted)}
+.fuse-row.sel{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold) inset}
+.fuse-head{display:flex;align-items:center;justify-content:center;gap:10px;margin:6px 0 2px}
+.fuse-head img{width:64px;height:64px}
+.fuse-stars{font-size:.9rem;color:var(--gold);font-weight:800;letter-spacing:2px;min-height:1.2em}
+.p-note{font-size:.7rem;color:var(--muted);margin:10px auto 0;max-width:340px;line-height:1.5}
+.skill-up{min-width:86px}
 .mut-compare{display:flex;gap:8px;align-items:stretch;margin:10px 0}
 .mut-card{
   flex:1;background:var(--panel);border:1px solid var(--line);border-radius:14px;

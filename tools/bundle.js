@@ -5,7 +5,7 @@ const read=p=>fs.readFileSync(path.join(W,p),'utf8');
 
 const html=read('index.html');
 const css=read('styles.css');
-const order=['bignum','util','i18n','data','state','sprites','mutations','arena','audio','ads','game','ui','views','main'];
+const order=['bignum','util','i18n','data','state','sprites','mutations','arena','audio','ads','online','game','ui','views','main'];
 const js=order.map(n=>'/* ===== js/'+n+'.js ===== */\n'+read('js/'+n+'.js')).join('\n');
 
 const body=html.split('<body class="rtl">')[1].split('<script src="js/util.js">')[0]

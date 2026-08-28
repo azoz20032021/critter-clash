@@ -5,6 +5,7 @@ const path = require('path');
 const { chromium } = require('playwright');
 
 const ROOT = path.join(__dirname, '..', 'www');
+const DEBUG_SHOTS = path.join(__dirname, '..', 'shots', '_debug');   // gitignored
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.json': 'application/json' };
 
 function serve(port) {
@@ -98,7 +99,8 @@ function check(name, cond, extra) {
   await page.waitForTimeout(1200);
   st = await page.evaluate(() => window.CCDEBUG.state());
   check('boss stage started with a timer', st.bossActive && st.bossTimer > 0, 'timer=' + st.bossTimer.toFixed(1));
-  await page.screenshot({ path: path.join(__dirname, '..', 'shots', 'boss.png') });
+  fs.mkdirSync(DEBUG_SHOTS, { recursive: true });
+  await page.screenshot({ path: path.join(DEBUG_SHOTS, 'boss.png') });
 
   /* ---- skills ---- */
   const usedSkill = await page.evaluate(() => {
@@ -122,6 +124,38 @@ function check(name, cond, extra) {
   st = await page.evaluate(() => window.CCDEBUG.state());
   check('prestige reset gold & kept souls', bv(st.gold) === 0 && st.souls > 0, 'souls=' + st.souls);
   check('prestige incremented counter', st.prestiges === 1, st.prestiges);
+  check('prestige also wipes the skill upgrade track',
+        Object.keys(st.skillLv || {}).length === 0, JSON.stringify(st.skillLv));
+
+  /* ---- the same ground must never pay twice ----
+     Regression: souls were computed straight from bestStage, so prestiging
+     again without advancing handed out the full payout over and over. */
+  const repeat = await page.evaluate(() => {
+    const g = window.CCDEBUG.state(), CC = window.CC;
+    const before = g.souls;
+    const claimed = g.soulStage;
+    const second = CC.game.prestigeGain();
+    const ok = CC.game.doPrestige();
+    return { before, after: g.souls, claimed, second, ok: !!ok, best: g.bestStage };
+  });
+  check('re-prestiging without new progress pays nothing', repeat.second === 0, 'gain=' + repeat.second);
+  check('a no-gain prestige is refused outright', repeat.ok === false, repeat.ok);
+  check('souls did not move on the repeat attempt', repeat.after === repeat.before,
+        repeat.before + ' -> ' + repeat.after);
+  check('the claimed depth was recorded', repeat.claimed === repeat.best,
+        repeat.claimed + ' vs best ' + repeat.best);
+
+  /* ...but pushing deeper pays for exactly the new ground */
+  const deeper = await page.evaluate(() => {
+    const g = window.CCDEBUG.state(), CC = window.CC, D = CC.data;
+    g.bestStage = 70;
+    const expected = Math.floor(
+      (D.soulsFor(70) - D.soulsFor(g.soulStage)) * CC.game.d.soulMultOnPrestige);
+    return { gain: CC.game.prestigeGain(), expected };
+  });
+  check('new stages pay only for the new ground',
+        deeper.gain === deeper.expected && deeper.gain > 0,
+        deeper.gain + ' vs ' + deeper.expected);
 
   /* ---- the HP bar must track the monster, not just exist ----
      Regression: after the big-number conversion the bar did `hp / maxHp`
@@ -198,7 +232,7 @@ function check(name, cond, extra) {
 
   /* ---- optional ×2 ad on prestige ---- */
   await page.click('#tabs .tab[data-view="battle"]');
-  await page.evaluate(() => window.CCDEBUG.jump(60));
+  await page.evaluate(() => window.CCDEBUG.jump(120));
   await page.waitForTimeout(700);
   await page.click('#tabs .tab[data-view="prestige"]');
   await page.waitForTimeout(400);
@@ -213,7 +247,7 @@ function check(name, cond, extra) {
   const soulsAfterBase = (await page.evaluate(() => window.CCDEBUG.state())).souls;
   check('base souls granted before the ad is shown', soulsAfterBase === soulsBefore + expectGain,
         soulsBefore + ' -> ' + soulsAfterBase);
-  await page.screenshot({ path: path.join(__dirname, '..', 'shots', 'prestige-x2.png') });
+  await page.screenshot({ path: path.join(DEBUG_SHOTS, 'prestige-x2.png') });
   await hasOffer.click();
   await page.waitForSelector('.ad-sim', { timeout: 4000 });
   await page.waitForSelector('.ad-sim-skip:not([disabled])', { timeout: 12000 });
@@ -226,7 +260,7 @@ function check(name, cond, extra) {
   check('ad view counted in stats', adsCount >= 1, adsCount);
 
   /* skipping the offer must keep the base reward */
-  await page.evaluate(() => { window.CCDEBUG.state().bestStage = 60; });
+  await page.evaluate(() => { window.CCDEBUG.state().bestStage = 200; });
   await page.click('#tabs .tab[data-view="prestige"]');
   await page.waitForTimeout(300);
   const sBefore2 = (await page.evaluate(() => window.CCDEBUG.state())).souls;
@@ -239,6 +273,77 @@ function check(name, cond, extra) {
   await page.waitForTimeout(300);
   const sAfter2 = (await page.evaluate(() => window.CCDEBUG.state())).souls;
   check('skipping the ad still keeps the base souls', sAfter2 === sBefore2 + gain2, sBefore2 + ' -> ' + sAfter2);
+
+  /* ---- skill upgrades ---- */
+  const skillUp = await page.evaluate(() => {
+    const g = window.CCDEBUG.state(), CC = window.CC;
+    g.bestStage = 60;
+    const def = CC.state.skillDef('fury');
+    const base = CC.data.skillMult(def, 0);
+    const cheap = CC.game.buySkillUpgrade('fury', 1);       // broke on purpose
+    CC.game.grantGold(CC.D(1e12));
+    const bought = CC.game.buySkillUpgrade('fury', 5);
+    const lv = CC.state.skillLevel(g, 'fury');
+    return { base, cheap, bought, lv, now: CC.data.skillMult(def, lv),
+             cd0: CC.data.skillCd(def, 0), cdN: CC.data.skillCd(def, lv) };
+  });
+  check('a broke player cannot buy a skill level', skillUp.cheap === false);
+  check('skill upgrades are purchasable with gold', skillUp.bought && skillUp.lv === 5, 'lv=' + skillUp.lv);
+  check('skills start weak and grow with levels', skillUp.now > skillUp.base,
+        '×' + skillUp.base + ' -> ×' + skillUp.now);
+  check('levelling a skill shortens its cooldown', skillUp.cdN < skillUp.cd0,
+        skillUp.cd0.toFixed(1) + 's -> ' + skillUp.cdN.toFixed(1) + 's');
+  const furyApplied = await page.evaluate(() => {
+    const CC = window.CC;
+    CC.game.skillState('fury').cdEnd = 0;
+    CC.game.useSkill('fury');
+    return CC.state.derive(window.CCDEBUG.state(), Date.now()).furyMult;
+  });
+  check('the upgraded multiplier is what actually fires', furyApplied === skillUp.now,
+        furyApplied + ' vs ' + skillUp.now);
+
+  /* ---- fusion ---- */
+  const fuse = await page.evaluate(() => {
+    const g = window.CCDEBUG.state(), CC = window.CC, D = CC.data;
+    g.bestStage = 60;
+    g.fusions = {};
+    const target = D.getCritter(2).id, fodder = D.getCritter(0).id;
+    g.critters[target] = 5;
+    g.critters[fodder] = 5;                               // too low to sacrifice
+    const tooLow = CC.game.fuseCritter(target, fodder);
+    g.critters[fodder] = D.fusionNeedLevel(0);
+    g.gems = 0;
+    const broke = CC.game.fuseCritter(target, fodder);
+    g.gems = 10000;
+    /* measure the survivor alone: the sacrifice is consumed, so total squad
+       DPS can legitimately dip while the fused critter itself gets stronger */
+    const own = () => {
+      const def = D.critterById(target), lv = g.critters[target] | 0;
+      return CC.D(def.baseDps)
+        .mul(lv * D.critterMilestoneMult(lv) * D.fusionMult(D.fusionStars(g, target)))
+        .log10();
+    };
+    const ownBefore = own();
+    const ok = CC.game.fuseCritter(target, fodder);
+    const ownAfter = own();
+    const gemsLeft = g.gems;
+    return { tooLow, broke, ok, stars: g.fusions[target], fodderLv: g.critters[fodder],
+             gemsLeft, grew: ownAfter > ownBefore,
+             ratio: Math.pow(10, ownAfter - ownBefore), target };
+  });
+  check('fusion refuses an under-levelled sacrifice', fuse.tooLow === false);
+  check('fusion refuses when gems are short', fuse.broke === false);
+  check('fusion awards a star', fuse.ok && fuse.stars === 1, 'stars=' + fuse.stars);
+  check('fusion consumes the sacrificed critter', fuse.fodderLv === 0, fuse.fodderLv);
+  check('fusion spends gems', fuse.gemsLeft < 10000, fuse.gemsLeft);
+  check("fusion raises the fused critter damage", fuse.grew, "×" + fuse.ratio.toFixed(2));
+  const fuseKept = await page.evaluate(() => {
+    const g = window.CCDEBUG.state(), CC = window.CC;
+    g.bestStage = 400;
+    CC.game.doPrestige();
+    return g.fusions;
+  });
+  check('fusion stars survive prestige', Object.keys(fuseKept).length > 0, JSON.stringify(fuseKept));
 
   /* ---- persistence ---- */
   await page.evaluate(() => { window.CCDEBUG.addGold(123456); window.CCDEBUG.save(); });
@@ -269,11 +374,10 @@ function check(name, cond, extra) {
   await page.waitForTimeout(300);
 
   /* ---- screenshots of every view ---- */
-  fs.mkdirSync(path.join(__dirname, '..', 'shots'), { recursive: true });
   for (const v of ['battle', 'critters', 'upgrades', 'prestige', 'more']) {
     await page.click('#tabs .tab[data-view="' + v + '"]');
     await page.waitForTimeout(600);
-    await page.screenshot({ path: path.join(__dirname, '..', 'shots', v + '.png') });
+    await page.screenshot({ path: path.join(DEBUG_SHOTS, v + '.png') });
   }
 
   /* ---- long-run simulation: 12 minutes of idle play, no errors, real progress ---- */

@@ -125,6 +125,7 @@
           '<div class="ms c-ms"></div>' +
           '<div class="mini"><i></i></div>' +
         '</div>' +
+        '<button class="fuse-btn" hidden>⭐</button>' +
         '<button class="mut-btn" hidden>🧬</button>' +
         '<button class="buy"><span class="b1"></span><span class="b2"></span></button>';
       $('.buy', el).onclick = () => {
@@ -132,6 +133,7 @@
         else toast(T.t('not_enough'), 'bad');
       };
       $('.mut-btn', el).onclick = () => { if (CC.views) CC.views.openMutation(def); };
+      $('.fuse-btn', el).onclick = () => { if (CC.views) CC.views.openFusion(def); };
       host.appendChild(el);
     });
   }
@@ -148,7 +150,10 @@
       el.classList.toggle('locked', !unlocked);
       $('.c-nm', el).textContent = T.tl(def.name);
       $('.c-lv', el).textContent = lv > 0 ? T.t('level_short') + ' ' + lv : '';
-      const total = D(def.baseDps).mul(lv * DATA.critterMilestoneMult(lv));
+      const total = D(def.baseDps)
+        .mul(lv * DATA.critterMilestoneMult(lv))
+        .mul(DATA.fusionMult(DATA.fusionStars(g, def.id)))
+        .mul(CC.mut ? CC.mut.dpsMult(g.mutations[def.id]) : 1);
       $('.c-ds', el).textContent = unlocked
         ? (lv > 0 ? U.fmt(total) + ' ' + T.t('dps') : T.tl(def.desc))
         : T.t('locked_at') + ' ' + def.unlock;
@@ -180,6 +185,13 @@
       const mb = $('.mut-btn', el);
       mb.hidden = lv <= 0;
       mb.classList.toggle('has', !!mut);
+
+      const stars = DATA.fusionStars(g, def.id);
+      const fb = $('.fuse-btn', el);
+      fb.hidden = lv <= 0;
+      fb.classList.toggle('has', stars > 0);
+      fb.textContent = stars > 0 ? '⭐' + stars : '⭐';
+      fb.title = T.t('fusion_stars') + ' ' + stars + '/' + DATA.FUSION.maxStars;
 
       const btn = $('.buy', el);
       const mode = g.buyMode;
@@ -225,6 +237,11 @@
     sk.style.marginTop = '14px';
     sk.innerHTML = '<h2>' + T.t('skills_title') + '</h2>';
     host.appendChild(sk);
+    const hint = document.createElement('p');
+    hint.className = 'muted';
+    hint.style.cssText = 'font-size:.7rem;line-height:1.5;margin:0 0 8px';
+    hint.textContent = T.t('skills_hint');
+    host.appendChild(hint);
     const skl = document.createElement('div');
     skl.className = 'list';
     skl.id = 'skill-list';
@@ -235,9 +252,17 @@
       el.dataset.id = def.id;
       el.innerHTML =
         '<div class="art">' + def.icon + '</div>' +
-        '<div class="info"><div class="nm"><span class="s-nm"></span></div>' +
-        '<div class="ds s-ds"></div></div>' +
-        '<div class="buy s-st" style="pointer-events:none"></div>';
+        '<div class="info">' +
+          '<div class="nm"><span class="s-nm"></span><i class="s-lv"></i></div>' +
+          '<div class="ds s-ds"></div>' +
+          '<div class="ms s-st"></div>' +
+          '<div class="mini"><i></i></div>' +
+        '</div>' +
+        '<button class="buy skill-up"><span class="b1"></span><span class="b2"></span></button>';
+      $('.buy', el).onclick = () => {
+        if (CC.game.buySkillUpgrade(def.id, ui.g.buyMode)) { refreshLists(true); flashRes('gold'); }
+        else toast(T.t('not_enough'), 'bad');
+      };
       skl.appendChild(el);
     });
   }
@@ -268,17 +293,35 @@
     $$('#skill-list .card').forEach(el => {
       const def = S.skillDef(el.dataset.id);
       const unlocked = CC.game.skillUnlocked(def.id);
+      const lv = S.skillLevel(g, def.id);
       el.classList.toggle('locked', !unlocked);
       $('.s-nm', el).textContent = T.tl(def.name);
+      $('.s-lv', el).textContent = unlocked ? T.t('level_short') + ' ' + lv + '/' + def.maxLv : '';
       $('.s-ds', el).textContent = unlocked
-        ? T.tl(def.desc).replace('{m}', def.mult).replace('{d}', def.dur)
+        ? T.tl(def.desc)
+            .replace('{m}', U.fmt(DATA.skillMult(def, lv), 2))
+            .replace('{d}', U.fmt(DATA.skillDur(def, lv), 1))
         : T.t('locked_at') + ' ' + def.unlock;
+
       const st = g.skills[def.id] || {};
       const stEl = $('.s-st', el);
-      if (!unlocked) stEl.textContent = '🔒';
-      else if (st.activeEnd > t) stEl.textContent = T.t('active');
-      else if (st.cdEnd > t) stEl.textContent = U.fmtClock((st.cdEnd - t) / 1000);
-      else stEl.textContent = T.t('ready');
+      let status;
+      if (!unlocked) status = '🔒';
+      else if (st.activeEnd > t) status = T.t('active');
+      else if (st.cdEnd > t) status = U.fmtClock((st.cdEnd - t) / 1000);
+      else status = T.t('ready');
+      stEl.textContent = status + ' · ⏱ ' + Math.round(DATA.skillCd(def, lv)) + 's';
+      $('.mini i', el).style.width = (lv / def.maxLv * 100) + '%';
+
+      const btn = $('.buy', el);
+      const maxed = lv >= def.maxLv;
+      const n = (!unlocked || maxed) ? 0 : (g.buyMode === 'max'
+        ? Math.max(1, D.maxAffordable(def.upCost, def.upMult, lv, g.gold, def.maxLv - lv))
+        : Math.min(g.buyMode, def.maxLv - lv));
+      const cost = D.bulkCost(def.upCost, def.upMult, lv, n);
+      btn.disabled = !unlocked || maxed || cost.gt(g.gold);
+      $('.b1', btn).textContent = (!unlocked || maxed) ? '' : '+' + n;
+      $('.b2', btn).textContent = !unlocked ? '🔒' : maxed ? T.t('maxed') : '🪙 ' + U.fmt(cost);
     });
   }
 
@@ -426,6 +469,9 @@
       ['tap_dmg', U.fmt(d.tap)],
       ['prestige_count', g.prestiges],
       ['souls', U.fmt(g.souls)],
+      ['st_elites', U.fmt(g.stats.elites || 0)],
+      ['st_fusions', U.fmt(DATA.fusionTotal(g))],
+      ['st_arena', (g.arena.wins || 0) + ' / ' + (g.arena.losses || 0)],
       ['st_ads', g.stats.ads],
       ['st_playtime', U.fmtTime(g.stats.playtime)]
     ];
@@ -646,7 +692,8 @@
         if (!it.enabled) return;
         closeModal(m);
         if (id === 'chest_free') {
-          g.nextFreeChest = Date.now() + 30 * 60 * 1000;
+          const wait = 30 * 60 * 1000 * ((CC.game.d && CC.game.d.chestWait) || 1);
+          g.nextFreeChest = Date.now() + wait;
           showChest(CC.game.openChest(), true);   // free chest → offer the optional ×2
           return;
         }
@@ -870,6 +917,13 @@
       const lv = g.upgrades[u.id] || 0;
       if (lv < u.max && D.bulkCost(u.baseCost, u.costMult, lv, 1).lte(g.gold)) { upgAff = true; break; }
     }
+    if (!upgAff) {
+      for (const sk of DATA.SKILLS) {
+        if (!CC.game.skillUnlocked(sk.id)) continue;
+        const lv = S.skillLevel(g, sk.id);
+        if (lv < sk.maxLv && D.bulkCost(sk.upCost, sk.upMult, lv, 1).lte(g.gold)) { upgAff = true; break; }
+      }
+    }
     let relicAff = false;
     for (const r of DATA.RELICS) {
       const lv = g.relics[r.id] || 0;
@@ -877,7 +931,7 @@
     }
     const dots = {
       critters: critterAff, upgrades: upgAff,
-      prestige: relicAff || (g.bestStage >= 10 && CC.game.prestigeGain() > 0 && g.prestiges === 0),
+      prestige: relicAff || (CC.game.prestigeGain() > 0 && g.prestiges === 0),
       more: false
     };
     $$('#tabs .tab').forEach(b => {
@@ -894,11 +948,27 @@
     $('#p-bonus').textContent = '×' + U.fmt(DATA.soulMultiplier(g.souls));
     const gain = CC.game.prestigeGain();
     const btn = $('#prestige-btn');
-    const can = g.bestStage >= 10 && gain > 0;
+    const tooShallow = g.bestStage < DATA.BAL.minPrestigeStage;
+    const can = !tooShallow && gain > 0;
     btn.disabled = !can;
     btn.textContent = can
       ? T.t('do_prestige') + ' — 👻 ' + U.fmt(gain)
-      : T.t('prestige_need');
+      : tooShallow ? T.t('prestige_need') : T.t('prestige_no_gain');
+
+    /* Souls are paid per NEW stage, so say exactly where the next one is. */
+    const note = $('#p-note');
+    if (note) {
+      if (tooShallow) {
+        note.textContent = T.t('prestige_need');
+      } else if (gain > 0) {
+        note.textContent = T.t('souls_pending') + ': 👻 ' + U.fmt(gain) +
+          '  ·  ' + T.t('best_stage') + ' ' + g.bestStage +
+          '  ·  ' + T.t('soul_claimed_stage') + ' ' + (g.soulStage || 0);
+      } else {
+        note.textContent = T.t('soul_claimed_stage') + ': ' + (g.soulStage || 0) +
+          '  ·  ' + T.t('prestige_need_deeper').replace('{s}', DATA.nextSoulStage(g.soulStage || 0));
+      }
+    }
   }
 
   /* =========================================================
@@ -940,10 +1010,12 @@
     $('#chest-btn').onclick = () => { CC.audio.resume(); openRewards(); };
     $('#boss-btn').onclick = () => { g.bossFailed = false; CC.game.startBoss(); };
     $('#prestige-btn').onclick = () => {
+      if (CC.game.prestigeGain() <= 0) { toast(T.t('prestige_no_gain'), 'bad'); return; }
       confirmBox(T.t('confirm_prestige'), () => {
         const gain = CC.game.doPrestige();
         switchView('battle');
         if (gain > 0) showPrestigeReward(gain);
+        else toast(T.t('prestige_no_gain'), 'bad');
       });
     };
 

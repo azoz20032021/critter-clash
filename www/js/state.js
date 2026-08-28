@@ -8,7 +8,7 @@
   const MUT = () => CC.mut;
 
   const SAVE_KEY = 'critterclash.save.v1';
-  const SAVE_VERSION = 1;
+  const SAVE_VERSION = 2;
 
   function randomFriendCode() {
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -32,12 +32,15 @@
       critters: {}, upgrades: {}, relics: {}, achievements: {},
       mutations: {},           // critterId -> { rarity, trait, element, shape, hue, seed }
       mutRolls: {},            // critterId -> how many times it has been re-rolled
+      fusions: {},             // critterId -> fusion stars (permanent, survives prestige)
+      skillLv: {},             // skillId -> gold-bought upgrade level
       arena: { trophies: 0, wins: 0, losses: 0, lastOpponents: [], nextFree: 0 },
       online: { uid: null, friendCode: randomFriendCode(), friends: {}, attackLog: [], lastSync: 0 },
       skills: {},              // id -> { cdEnd, activeEnd }
       boosts: {},              // 'gold' | 'dmg' -> { mult, end }
 
       prestiges: 0,
+      soulStage: 0,            // deepest stage already paid out in souls
       buyMode: 1,              // 1 | 10 | 100 | 'max'
 
       stats: { taps: 0, kills: 0, bosses: 0, crits: 0, totalGold: D(0), playtime: 0, ads: 0, chests: 0 },
@@ -80,6 +83,14 @@
 
   function skillDef(id) { return DATA.SKILLS.find(s => s.id === id); }
 
+  function skillLevel(g, id) { return (g.skillLv && g.skillLv[id]) || 0; }
+
+  /** A skill's live multiplier, already scaled by its upgrade level. */
+  function skillPower(g, id) {
+    const def = skillDef(id);
+    return def ? DATA.skillMult(def, skillLevel(g, id)) : 1;
+  }
+
   /** Everything the combat loop needs, recomputed each frame (cheap). */
   function derive(g, t) {
     t = t || Date.now();
@@ -93,9 +104,11 @@
     const dmgBoost = boostMult(g, 'dmg', t);
     const goldBoost = boostMult(g, 'gold', t);
 
-    const furyMult = skillActive(g, 'fury', t) ? skillDef('fury').mult : 1;
-    const rallyMult = skillActive(g, 'rally', t) ? skillDef('rally').mult : 1;
-    const rushMult = skillActive(g, 'goldrush', t) ? skillDef('goldrush').mult : 1;
+    const furyMult = skillActive(g, 'fury', t) ? skillPower(g, 'fury') : 1;
+    const rallyMult = skillActive(g, 'rally', t) ? skillPower(g, 'rally') : 1;
+    const rushMult = skillActive(g, 'goldrush', t) ? skillPower(g, 'goldrush') : 1;
+    const frozen = skillActive(g, 'frost', t);
+    const berserk = skillActive(g, 'berserk', t);
 
     /* ---- critter DPS ---- */
     let rawDps = D(0);
@@ -105,7 +118,8 @@
       const def = DATA.critterById(id);
       if (!def) continue;
       const mult = CC.mut ? CC.mut.dpsMult(g.mutations && g.mutations[id]) : 1;
-      rawDps = rawDps.add(D(def.baseDps).mul(n * DATA.critterMilestoneMult(n) * mult));
+      const fuse = DATA.fusionMult(DATA.fusionStars(g, id));
+      rawDps = rawDps.add(D(def.baseDps).mul(n * DATA.critterMilestoneMult(n) * mult * fuse));
     }
     const mg = CC.mut ? CC.mut.globals(g) : { goldPct: 0, critPct: 0 };
     const squadPct = 1 + upgEffect(g, 'squad').total / 100;
@@ -120,31 +134,37 @@
       .add(dps.mul(echoPct));
 
     /* ---- crits & extras ---- */
-    const critChance = Math.min(0.75, DATA.BAL.critChance + (upgEffect(g, 'crit').total + mg.critPct) / 100);
+    const critChance = berserk
+      ? 1
+      : Math.min(0.75, DATA.BAL.critChance + (upgEffect(g, 'crit').total + mg.critPct) / 100);
     const critMult = DATA.BAL.critMult + upgEffect(g, 'critdmg').total;
     const multiHit = Math.min(0.9, upgEffect(g, 'multi').total / 100);
 
     /* ---- gold ---- */
     const goldMult = (1 + (upgEffect(g, 'greed').total + mg.goldPct) / 100) * relicGold * goldBoost * rushMult;
+    const bossGoldMult = 1 + upgEffect(g, 'fortune').total / 100;
+    const bossDmg = 1 + upgEffect(g, 'focus').total / 100;
 
     /* ---- misc ---- */
     const bossTime = DATA.BAL.bossTime + upgEffect(g, 'bosstime').total + relicEffect(g, 'r_boss').total;
     const autoTaps = relicEffect(g, 'r_auto').total;
-    const cdMult = Math.max(0.4, 1 - relicEffect(g, 'r_cd').total / 100);
+    const cdMult = Math.max(0.25, 1 - (relicEffect(g, 'r_cd').total + upgEffect(g, 'haste').total) / 100);
+    const chestWait = Math.max(0.4, 1 - upgEffect(g, 'treasure').total / 100);
     const offlineRate = DATA.BAL.offlineRate * (1 + relicEffect(g, 'r_off').total / 100);
     const offlineCap = (DATA.BAL.offlineCapHours + relicEffect(g, 'r_off').n) * 3600;
     const gemLuck = upgEffect(g, 'gemluck').total / 100;
     const gemMult = relicGem;
-    const soulMultOnPrestige = 1 + relicEffect(g, 'r_soul').total / 100;
+    const soulMultOnPrestige = 1 + (relicEffect(g, 'r_soul').total + upgEffect(g, 'soulseek').total) / 100;
     // Ancient Map skips you past ground you have already cleared, which is what
     // keeps a stage-15000 save replayable instead of a 40-minute walk back.
-    const startPct = Math.min(60, relicEffect(g, 'r_start').total) / 100;
+    const startPct = Math.min(80, relicEffect(g, 'r_start').total) / 100;
     const startStage = Math.max(1, Math.floor((g.bestStage || 1) * startPct));
 
     return {
       dps, rawDps, tap, critChance, critMult, multiHit, goldMult,
-      bossTime, autoTaps, cdMult, offlineRate, offlineCap,
+      bossTime, autoTaps, cdMult, chestWait, offlineRate, offlineCap,
       gemLuck, gemMult, soulMult, soulMultOnPrestige, startStage,
+      bossDmg, bossGoldMult, frozen, berserk,
       dmgBoost, goldBoost, furyMult, rallyMult, rushMult
     };
   }
@@ -190,6 +210,23 @@
     g.killsInStage = U.clamp(Math.floor(g.killsInStage) || 0, 0, DATA.BAL.monstersPerStage);
     if (!g.mutations) g.mutations = {};
     if (!g.mutRolls) g.mutRolls = {};
+    if (!g.fusions) g.fusions = {};
+    if (!g.skillLv) g.skillLv = {};
+    /* v1 saves paid souls purely off bestStage, so the same stage could be
+       cashed in again and again. Anyone who has already prestiged is treated
+       as having claimed everything they have reached; a first-timer keeps
+       their full pending payout. */
+    if (typeof raw.soulStage !== 'number') {
+      g.soulStage = (g.prestiges > 0) ? g.bestStage : 0;
+    }
+    g.soulStage = Math.max(0, Math.min(Math.floor(g.soulStage) || 0, g.bestStage));
+    for (const id in g.skillLv) {
+      const def = DATA.SKILLS.find(x => x.id === id);
+      g.skillLv[id] = def ? U.clamp(Math.floor(g.skillLv[id]) || 0, 0, def.maxLv) : 0;
+    }
+    for (const id in g.fusions) {
+      g.fusions[id] = U.clamp(Math.floor(g.fusions[id]) || 0, 0, DATA.FUSION.maxStars);
+    }
     if (!g.playerName) g.playerName = 'Player' + Math.floor(1000 + Math.random() * 9000);
     if (!g.arena) g.arena = { trophies: 0, wins: 0, losses: 0, lastOpponents: [], nextFree: 0 };
     if (!g.online) g.online = { uid: null, friendCode: randomFriendCode(), friends: {}, attackLog: [], lastSync: 0 };
@@ -228,6 +265,6 @@
 
   CC.state = {
     SAVE_KEY, freshState, derive, save, load, exportSave, importSave, wipe,
-    relicEffect, upgEffect, boostMult, skillActive, skillDef, lvl, parse
+    relicEffect, upgEffect, boostMult, skillActive, skillDef, skillLevel, skillPower, lvl, parse
   };
 })(window);

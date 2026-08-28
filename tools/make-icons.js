@@ -108,10 +108,10 @@ function serve(port){return new Promise(r=>{const s=http.createServer((q,rp)=>{
   const browser=await chromium.launch();
   const jobs=[
     {name:'icon.png',w:1024,h:1024,mode:'icon'},
+    {name:'icon-512.png',w:512,h:512,mode:'icon'},          // Play Console listing
     {name:'icon-foreground.png',w:1024,h:1024,mode:'fg'},
     {name:'icon-background.png',w:1024,h:1024,mode:'bgonly'},
     {name:'splash.png',w:2732,h:2732,mode:'splash'},
-    {name:'splash-dark.png',w:2732,h:2732,mode:'splash'},
     {name:'feature-graphic.png',w:1024,h:500,mode:'feature'}
   ];
   for(const j of jobs){
@@ -124,12 +124,14 @@ function serve(port){return new Promise(r=>{const s=http.createServer((q,rp)=>{
     await page.close();
     console.log('  wrote resources/'+j.name+'  ('+j.w+'x'+j.h+')');
   }
-  // web favicon
-  global.__PAGE=PAGE(192,192,'icon');
-  const p2=await browser.newPage({viewport:{width:192,height:192}});
-  await p2.goto('http://localhost:5201/render',{waitUntil:'networkidle'});
-  await (await p2.$('#c')).screenshot({path:path.join(ROOT,'icon-192.png')});
-  await p2.close();
-  console.log('  wrote www/icon-192.png');
+  // web icons
+  for(const px of [192,512]){
+    global.__PAGE=PAGE(px,px,'icon');
+    const p2=await browser.newPage({viewport:{width:px,height:px}});
+    await p2.goto('http://localhost:5201/render',{waitUntil:'networkidle'});
+    await (await p2.$('#c')).screenshot({path:path.join(ROOT,'icon-'+px+'.png')});
+    await p2.close();
+    console.log('  wrote www/icon-'+px+'.png');
+  }
   await browser.close();server.close();
 })();

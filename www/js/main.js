@@ -16,11 +16,18 @@
     CC.audio.setSfx(g.sound);
     CC.audio.setMusic(g.music);
     CC.ads.init();
-    if (CC.online) await CC.online.init(g);
 
     const canvas = document.getElementById('scene');
     CC.game.attach(canvas, g);
     CC.ui.init(g);
+
+    /* Fired, not awaited: a slow or missing network must never hold the game
+       on a black screen. Online features light up whenever they connect. */
+    if (CC.online) {
+      Promise.resolve()
+        .then(() => CC.online.init(g))
+        .catch(e => console.warn('online init failed', e));
+    }
 
     /* offline earnings before we touch lastTick */
     const rep = CC.game.offlineReport(g, CC.game.d, Date.now());
@@ -150,7 +157,11 @@
     document.addEventListener('pointerdown', kick);
     document.addEventListener('touchstart', kick);
 
-    /* expose a tiny debug hook (handy while testing, harmless in release) */
+    /* Debug hook for the browser build only — the shipped Android/iOS app must
+       not ship a console that hands out gold and stages. */
+    const nativeBuild = !!(global.Capacitor && global.Capacitor.isNativePlatform
+      && global.Capacitor.isNativePlatform());
+    if (nativeBuild) return;
     global.CCDEBUG = {
       state: () => g,
       derive: () => CC.game.d,
@@ -158,6 +169,7 @@
       addSouls: n => { g.souls += n; },
       power: () => CC.D.format(CC.game.d.dps),
       jump: n => { g.bestStage = Math.max(g.bestStage, n); CC.game.gotoStage(n); },
+      addGems: n => { g.gems += n; },
       save: () => S.save(g),
       wipe: () => { S.__noSave = true; CC.game.running = false; S.wipe(); }
     };

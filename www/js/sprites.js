@@ -50,8 +50,28 @@
     { k: 'cog',     body: 'gear',   eyes: 1, mouth: 'flat', arms: true, glow: true },
     { k: 'ghosty',  body: 'ghost',  eyes: 2, mouth: 'oh', float: true, glow: true },
     { k: 'crab',    body: 'wide',   eyes: 2, mouth: 'flat', claws: true, legs: 6, shell: true, bulgeEyes: true },
-    { k: 'golem',   body: 'poly',   eyes: 2, mouth: 'flat', arms: true, legs: 2, crystals: true, spikes: 4 }
+    { k: 'golem',   body: 'poly',   eyes: 2, mouth: 'flat', arms: true, legs: 2, crystals: true, spikes: 4 },
+    { k: 'hornet',  body: 'oval',   eyes: 4, mouth: 'fangs', wings: 'bat', antennae: true, legs: 6, tail: 'sting' },
+    { k: 'mimic',   body: 'wide',   eyes: 2, mouth: 'maw', legs: 4, shell: true, spikes: 3 },
+    { k: 'seer',    body: 'round',  eyes: 3, mouth: 'none', float: true, glow: true, crystals: true },
+    { k: 'brute',   body: 'pear',   eyes: 2, mouth: 'fangs', arms: true, legs: 2, horns: 2, shell: true },
+    { k: 'lich',    body: 'ghost',  eyes: 2, mouth: 'fangs', float: true, horns: 2, glow: true },
+    { k: 'tick',    body: 'round',  eyes: 4, mouth: 'flat', legs: 6, spikes: 5, shell: true },
+    { k: 'serpent', body: 'segment',eyes: 2, mouth: 'fangs', segments: 5, horns: 2, snout: true },
+    { k: 'jelly',   body: 'blob',   eyes: 3, mouth: 'oh', wobble: 0.3, float: true, glow: true, shine: true },
+    { k: 'sentry',  body: 'gear',   eyes: 2, mouth: 'flat', arms: true, spikes: 6 },
+    { k: 'stalker', body: 'oval',   eyes: 4, mouth: 'grin', legs: 4, claws: true, tail: 'arrow', ears: 'tall' },
+    { k: 'ember',   body: 'flame',  eyes: 2, mouth: 'grin', float: true, glow: true, horns: 2 },
+    { k: 'behemoth',body: 'wide',   eyes: 2, mouth: 'maw', legs: 4, horns: 2, spikes: 6, snout: true, shell: true }
   ];
+
+  /** Stable 32-bit hash of a string — sprite seeds must not depend on floats. */
+  function hashId(str) {
+    let h = 2166136261;
+    str = String(str);
+    for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+    return h >>> 0;
+  }
 
   /* ---------------- spec generators ---------------- */
   function monsterSpec(stage, index, isBoss) {
@@ -89,7 +109,7 @@
   }
 
   function critterSpec(def) {
-    const rng = U.seeded(def.id.length * 31 + def.baseDps);
+    const seed = hashId(def.id);
     const map = {
       round: 'slime', blob: 'shroom', dragon: 'drake', bear: 'wolf', snake: 'worm',
       ghost: 'ghosty', octo: 'crab', robot: 'cog', angel: 'wisp', maw: 'worm',
@@ -99,7 +119,7 @@
     const arch = ARCHETYPES.find(a => a.k === key) || ARCHETYPES[0];
     return {
       arch, pal: def.pal.slice(), eyeColor: '#ffffff', pupil: '#12121a',
-      boss: false, seed: def.baseDps | 0, scale: 1, crown: false,
+      boss: false, seed, scale: 1, crown: false,
       aura: def.shape === 'star' || def.shape === 'angel' ? def.pal[0] : null, zi: 0
     };
   }

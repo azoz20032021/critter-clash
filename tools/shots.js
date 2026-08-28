@@ -20,11 +20,14 @@ const serve=p=>new Promise(r=>{const s=http.createServer((q,rp)=>{let u=q.url.sp
 
   await page.evaluate(()=>{
     const g=window.CCDEBUG.state();
-    g.bestStage=48; g.souls=64; g.gems=430; g.prestiges=2;
-    g.gold=5e11;
+    g.bestStage=48; g.souls=64; g.gems=430; g.prestiges=2; g.soulStage=41;
+    g.gold=window.CC.D(5e11);          // gold is a big number, not a JS float
     ['sparky','mossy','pyra','glacio','venn','phantom'].forEach((id,i)=>{ g.critters[id]=[260,180,120,80,45,12][i]; });
-    window.CC.data.UPGRADES.forEach((u,i)=>{ g.upgrades[u.id]=[40,18,12,9,22,14,6,3,4,1][i]||0; });
+    window.CC.data.UPGRADES.forEach((u,i)=>{ g.upgrades[u.id]=[40,18,12,9,22,14,6,3,4,1,0,0,0,0,0][i]||0; });
     g.relics.r_dmg=6; g.relics.r_gold=4; g.relics.r_tap=5; g.relics.r_auto=2;
+    /* show the 1.1 systems off in the store screenshots */
+    g.skillLv={fury:9,rally:5,goldrush:3};
+    g.fusions={sparky:3,mossy:1};
     Object.keys(g.achievements).length; ['a_stage5','a_stage10','a_stage25','a_tap100','a_kill100','a_boss10','a_pres1','a_squad3'].forEach(a=>g.achievements[a]=true);
     g.boosts.gold={mult:2,end:Date.now()+900000};
     window.CC.game.gotoStage(32);

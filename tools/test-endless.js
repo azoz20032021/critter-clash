@@ -56,16 +56,33 @@ const serve = p => new Promise(r => {
           const cost = D.bulkCost(u.baseCost, u.costMult, lv, 1);
           if (cost.gt(g.gold)) continue;
           const w = { squad: 0.10, greed: 0.05, power: 0.02, claw: 0.01, crit: 0.02,
-                      critdmg: 0.01, tapdps: 0.02, multi: 0.01, bosstime: 0.005, gemluck: 0.001 }[u.id] || 0.01;
+                      critdmg: 0.01, tapdps: 0.02, multi: 0.01, bosstime: 0.005, gemluck: 0.001,
+                      focus: 0.03, fortune: 0.03, haste: 0.01, treasure: 0.002, soulseek: 0.02 }[u.id] || 0.01;
           const val = CC.game.d.dps.mul(w).div(cost).log10();
           if (val > bestVal) { bestVal = val; best = { kind: 'u', id: u.id }; }
         }
+        for (const sk of CC.data.SKILLS) {
+          if (!CC.game.skillUnlocked(sk.id)) continue;
+          const lv = CC.state.skillLevel(g, sk.id);
+          if (lv >= sk.maxLv) continue;
+          const cost = D.bulkCost(sk.upCost, sk.upMult, lv, 1);
+          if (cost.gt(g.gold)) continue;
+          const val = CC.game.d.dps.mul(0.02).div(cost).log10();
+          if (val > bestVal) { bestVal = val; best = { kind: 's', id: sk.id }; }
+        }
         if (!best) break;
-        if (best.kind === 'c') CC.game.buyCritter(best.id, 1); else CC.game.buyUpgrade(best.id, 1);
+        if (best.kind === 'c') CC.game.buyCritter(best.id, 1);
+        else if (best.kind === 's') CC.game.buySkillUpgrade(best.id, 1);
+        else CC.game.buyUpgrade(best.id, 1);
       }
     }
 
     function buyRelics() {
+      /* Ancient Map first: skipping the walk back is worth more than raw damage */
+      for (let i = 0; i < 60; i++) {
+        if (CC.game.relicCost('r_start') > g.souls / 2) break;
+        if (!CC.game.buyRelic('r_start')) break;
+      }
       for (let i = 0; i < 40; i++) {
         let bought = false;
         for (const r of CC.data.RELICS) {
